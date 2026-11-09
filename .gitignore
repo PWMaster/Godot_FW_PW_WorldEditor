@@ -1,0 +1,17 @@
+# Godot
+.godot/
+/android/
+
+# Original game data - not distributed; bring your own client / server files
+/Stock-PWE-Client/
+/Stock-PWE-Server/
+/ECM_Import/
+/GFX_Load/
+/addons/PWE-Manager/Server/data/
+/addons/PWE-Manager/Server/*.json
+
+# Internal notes
+/addons/PWE-Manager/Docs/
+
+# Third-party GDExtension (sqlite3.gd by Yeicor, ~1 GB of binaries) - install it separately
+/addons/sqlite3.gd/

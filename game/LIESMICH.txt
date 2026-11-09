@@ -1,0 +1,287 @@
+GODOT-FW: SPIEL (CLIENT UND SERVER)
+==========================================================================================
+Ordner game/ gehört nach res://game/ (neben addons/PWE-Manager und addons/sqlite3.gd; bis 2026-11-07
+hieß das Plugin gfx_importer).
+Stand 2026-11-08: Fahrplan Schritte 2 (Gerüst), 3 (Konten), 4 (Login), 5 (Figuren), 6 (Welt),
+7 (NPCs und Monster), 8 (Spiel-Oberfläche: HUD, Ziel, Chat "Sagen"), 10 (NPC-Gespräch und erste
+Quest), 10a (Autoroute mit Wegfindung, Quest-Verfolgung mit Links) und 10b (Inventar, Charakter,
+Ausrüstung, Sammeln), 9 (Kampf, Tod, Wiederbeleben; Protokoll 9) und 11 (durchgehender Test:
+Gesamt-Testlauf, Neustart-, Wiederverbinden- und Lasttest; Server mit Hash im Hintergrund und
+Last-Messung).
+
+Aufbau
+  main.tscn / main.gd     Hauptszene "Game"; Rolle aus der Kommandozeile bzw. dem Export:
+                          --server oder Export "dedicated_server" -> Server, --bot -> Test-Bot,
+                          sonst Client (Login im Spielstil; ohne Spieldaten das einfache
+                          Fenster). Netz und Sitzung hängen unter "Game" (keine Autoloads,
+                          project.godot braucht keine Einträge).
+  common/protocol.gd      Protokoll-Version, Anfragen, Antwort-Codes mit deutschen Texten
+  common/net.gd           Nachrichten über ENet (Anfrage / Antwort mit Nummer und Zeitlimit,
+                          Meldungen vom Server), rohe Pakete statt RPC
+  common/settings.gd      user://settings.cfg, Abschnitte [client] und [server]
+  server/server.gd        Server: Verbindungen, Versionsprüfung, Anfragen, Log / Status / Stop,
+                          Passwort-Hash im Hintergrund-Thread, Last (Takt-Dauer, längstes Bild, Netz)
+  server/db.gd            Hülle über die SQLite-Erweiterung (Werte immer gebunden)
+  server/schema.gd        Tabellen accounts, characters, inventory, quests; Versionsnummer
+  server/accounts.gd      Konten: PBKDF2-SHA256 mit Salt (50.000 Runden, im Hintergrund gerechnet),
+                          Fehlversuche begrenzt
+  server/characters.gd    Figuren: Liste, anlegen nach Startvorlage (Plugin Server/start_roles.json),
+                          Namensprüfung (Server/data/badwords.txt), löschen, auswählen
+  server/world.gd         Welt: Figuren in ihren Maps, Bewegung prüfen, Sichtbereich, speichern
+  server/npcs.gd          NPCs und Monster einer Map: erzeugen (npcgen.data, Höhenkarte), Stufe,
+                          Leben / Mana, umherlaufen, Tod und Respawn, Sichtgitter
+  server/stats.gd         Höchstwerte HP / MP nach Klasse und Stufe, EXP-Kurve (Plugin
+                          Server/class_templates.json), Leben / Mana der Monster
+  server/inventory.gd     Inventar, Ausrüstung (anlegen / ablegen / verschieben, Werte mit Ausrüstung)
+                          und Sammeln an Sammelpunkten (Plugin Server/item_templates.json)
+  server/skills.gd        Fertigkeiten und Schnellleisten (Startfertigkeiten der Klasse, neu / gesehen)
+  server/skill_cast.gd    Fertigkeiten einsetzen: Prüfungen, Zaubern nach den Prozeduren, Schaden, Mana,
+                          Abklingzeit, Abbruch (Plugin Server/skill_templates.json)
+  server/skill_expr.gd    Formeln der Fertigkeiten (C-Ausdrücke des Editors) übersetzen und rechnen
+  server/buffs.gd         Statuseffekte: anlegen (Erfolg, Überdeckungsregeln, Stapel), Takt, Ablauf, Wirkungen
+                          auf Werte / über Zeit / sofort (Plugin Server/state_templates.json)
+  server/combat.gd        Kampf: Normalangriff, Schaden wie wskill, Monster-KI (Aggro, Verfolgen, zurück),
+                          Tod / Wiederbeleben, EXP, Regeneration
+  server/quests.gd        Quests: vergeben (auch automatisch), annehmen / abschließen am NPC,
+                          aufgeben, Belohnung, Zustand in der Tabelle quests (Plugin
+                          Server/quest_templates.json)
+  client/session.gd       Client: verbinden, hello, Konto anlegen, an- und abmelden
+  client/login_screen.gd  Login im Stil des Spiels (Login.xml, LoginControl, LoginWait aus den
+                          Spieldaten), Konto anlegen, Server wählen, Meldungsfenster
+  client/ui/aui_manager.gd, aui_dialog.gd   Spiel-Oberfläche zur Laufzeit (Plugin-Builder)
+  client/ui/register.xml, server.xml        eigene Dialoge im AUI-Format (Bilder des Spiels)
+  client/char_select.gd   Figurenauswahl und -erstellung (CharList, Create_1 - 3 ...)
+  client/char_preview.gd  3D-Vorschau der Figur (Plugin angelica_player.gd)
+  client/world_screen.gd  Welt: Map laden (Ladebildschirm), Kollision, eigene Figur, andere Spieler,
+                          Ziel (Klick, Tab, F1), Chat, Minimap-Takt, Systemmenü, Autoroute (Wegekarte
+                          der Map über Plugin MAP/angelica_movemap.gd, Suche in einem Thread)
+  client/hud.gd           Spiel-Oberfläche der Welt aus <Skin>gameui (Kopf, Ziel, Schnellleisten,
+                          Chat, Minimap, Quest-Verfolgung, Quest-Fenster, NPC-Fenster, Menüleisten,
+                          Systemmenü Win_Quit, Statuseffekte Win_Buff und im Ziel-Fenster)
+  client/attack_fx.gd     Angriffs-Effekte: Angriffspunkte der Aktionen, Flug- und Treffer-GFX (.att), Wirkung
+                          (Zahl, Leben) erst beim Einschlag
+  client/item_data.gd     Gegenstände im Client: Name, Symbol (Atlanten iconlist_ivtr), Modell der Ausrüstung,
+                          Tooltip
+  client/quest_data.gd    Quests im Client: tasks.data der Sprache (Index), Quest-Dienste der NPCs,
+                          Einträge des NPC-Fensters, Symbole über den NPCs, Verfolgung, Platzhalter
+  client/local_player.gd  eigene Figur: Steuerung, Kamera, Animation, Weg der Autoroute ablaufen
+  client/remote_player.gd andere Spieler: Modell, Namensschild, weich nachgeführt
+  client/npc_data.gd      NPC- / Monster-Vorlagen: Name, Titel, Namensfarbe, Modell (elements.data
+                          in der Sprache des Clients, Modelle aus dem Map-Import)
+  client/world_npc.gd     NPC / Monster in der Welt: Modell, Name, Stehen / Leerlauf / Gehen
+  client/client.gd        einfaches Anmelde-Fenster, wenn keine Spieldaten da sind
+  tests/bot.gd            Test-Bot (172 Prüfungen inkl. Figuren, Welt, NPCs, Ziel, Chat, Quests, Startquest jeder
+                          Rasse / Klasse, Inventar, Kampf, Fertigkeiten einsetzen, Tod), auch als Knopf
+                          "Bot-Test" in der Leiste SERVER
+  tests/login_test.gd     Test des Logins im Spielstil (18 Prüfungen), braucht einen Server
+  tests/char_test.gd      Test von Figurenauswahl und -erstellung, braucht einen Server
+  tests/world_test.gd     Test der Welt mit NPCs, HUD, Quests, Autoroute, Inventar, Kampf und Fertigkeiten (129 Prüfungen), braucht einen Server und die
+                          importierte s9 (mit dem Map-Import ab Schritt 7, sonst fehlen die Modelle)
+  tests/skill_data_test.gd  Test der Fertigkeiten-Daten (9 Prüfungen: Formeln, Effekte, Startfertigkeiten
+                          gegen die Spieltexte), ohne Server
+  tests/buff_test.gd      Test der Statuseffekte mit eigener Uhr (15 Prüfungen: Brennen, Regeln, Stapel, Werte,
+                          Heilung, Ablauf, Tod), ohne Server
+  tests/npc_test.gd       Test der NPCs und Monster des Servers (15 Prüfungen), ohne Server:
+                          Godot --headless --path Projekt -s res://game/tests/npc_test.gd
+  tests/restart_test.gd   Neustart, Absturz, Wiederverbinden (40 Prüfungen) mit eigenem Server: Neustart
+                          mitten im Kampf (Ort, Leben, Mana, Quest, Inventar bleiben), harter Absturz
+                          (Quest bleibt, Ort = zuletzt gespeichert), Verbindung weg / hängt (erzwungene
+                          Anmeldung übernimmt)
+  tests/reconnect_test.gd Client bei Verbindungsverlust (23 Prüfungen) mit eigenem Server: Server weg
+                          mitten in der Welt -> Login mit Meldung, wieder anmelden, Figur an derselben
+                          Stelle; zweite Anmeldung desselben Kontos (braucht die importierte s9)
+  tests/load_test.gd      Lasttest (16 Prüfungen) mit eigenem Server: 25 Bots (--bots=N) melden sich
+                          gleichzeitig an und spielen 60 s (--seconds=N): laufen, kämpfen, Chat
+  tests/run_all.gd        alle Tests nacheinander mit Bericht (siehe "Alle Tests")
+  tests/test_server.gd, tests/test_util.gd   Hilfen: eigener Test-Server (--dir, Port), Sitzungen
+
+Starten
+  Im Editor: Leiste SERVER -> Starten / Test-Client / Bot-Test / Alle Tests / Stoppen.
+  Von Hand (Godot = Pfad zur Godot-Datei, Projekt = gfx-2):
+    Server   Godot --headless --path Projekt res://game/main.tscn -- --server --port=29000
+    Client   Godot --path Projekt res://game/main.tscn -- --host=127.0.0.1 --port=29000
+    Bot      Godot --headless --path Projekt res://game/main.tscn -- --bot --port=29000
+  main.tscn öffnen und F6 (Szene starten) startet den Client.
+  Server-Optionen (auch in user://settings.cfg [server]): --port --bind --max_clients
+  --dir=user://server (Log, Status, Stopp-Datei, DTLS-Schlüssel, Datenbank) --database=<dir>/game.db
+  --maps=s9,s10 (Spawns nur dieser Maps) --dtls
+  Client-Optionen ([client]): --host --port --account --language=Deu|Eng|Franz --dtls --ui_skin=2|1
+  --dtls_cert=<dtls.crt> --data_root=<Spieldaten> (Standard res://Stock-PWE-Client: der
+  Original-Client, gelesen direkt aus seinen .pck; entpackte Daten gehen auch) --remember
+  --maps_root=<importierte Maps> (Standard res://ECM_Import/maps)
+  Login-Test: Godot --path Projekt -s res://game/tests/login_test.gd -- --port=29000
+              [--language=Eng] [--shots=<Ordner für Bilder>]   (Figuren: tests/char_test.gd, gleich)
+
+Alle Tests (Fahrplan 11)
+  Leiste SERVER -> "Alle Tests" oder von Hand:
+    Godot --headless --path Projekt -s res://game/tests/run_all.gd [-- --full] [--only=bot,welt]
+  startet jeden Test als eigenen Prozess: NPC-Test; eigener Server (user://test_server/alle, frische
+  Datenbank, Port 29100) mit Bot, Login-, Figuren- und Welt-Test; Server neu starten und Bot
+  --expect-existing; Neustart- (Port 29110), Wiederverbinden- (29130) und Lasttest (29120) mit je
+  eigenem Server. Der Server der Leiste (29000, user://server) bleibt unberührt. Schnell: alles
+  ohne Fenster, gut 15 min; --full zusätzlich Vulkan und GL (Fenster) sowie Englisch und
+  Französisch, gut 1 h. Jede Ausgabe wird nach SCRIPT ERROR / SHADER ERROR / ERROR: durchsucht
+  (ein Fund ist ein Fehler, auch wenn der Test OK meldet). Fortschritt im Log der Leiste ("Test:"),
+  Ausgaben je Test, Fortschritt und Bericht unter user://test_server/alle/. Nach jeder Änderung
+  laufen lassen.
+
+In der Welt
+  W / A / S / D oder Pfeiltasten laufen (relativ zur Kamera), Umschalt gedrückt = gehen,
+  Leertaste springt, linke Maustaste auf den Boden = dorthin laufen, rechte Maustaste ziehen =
+  Kamera drehen, Mausrad = Abstand.
+  Ziel: linke Maustaste auf einen NPC, ein Monster oder einen Spieler wählt ihn (statt zu laufen),
+  Tab das nächste Monster (wie im Spiel nach script\SelectTargetRule.lua: höchstens 20 m, ab 5 m
+  nur im Blickfeld; wiederholt das nächste noch nicht gewählte), F1 die eigene Figur. Das Ziel-
+  Fenster zeigt Name, Stufe, Leben / Mana, ein farbiger Ring liegt unter dem Ziel.
+  Chat: Enter öffnet die Eingabe (Figur bleibt stehen), Enter sendet "Sagen" an alle im Umkreis
+  120 m, Esc schließt die Eingabe. Höchstens 120 Zeichen, 5 Nachrichten in 5 s; Wörter der
+  Wortliste werden durch * ersetzt.
+  Esc: schließt Chat-Eingabe bzw. Ziel, sonst öffnet / schließt es das Systemmenü (Win_Quit):
+  Wechseln = zurück zur Figurenauswahl, Verlassen = abmelden und beenden, Fenster wechseln =
+  andere Oberfläche (2gameui <-> 1gameui, gespeichert als ui_skin in settings.cfg), Zurück.
+  Die übrigen Menü-Knöpfe (Figur, Inventar, Fähigkeiten ...) melden im Chat "Noch nicht verfügbar".
+  Quests: ein zweiter Klick auf den gewählten NPC spricht ihn an (die Figur läuft per Autoroute bis
+  4 m heran). Das NPC-Fenster zeigt seinen Gruß und
+  seine Quests (gelbes ? = abschließbar, grünes ! = annehmbar); ein Eintrag führt durch das
+  Gespräch, die letzte Option nimmt die Quest an bzw. schließt sie ab. Die gleichen Zeichen stehen
+  über den Köpfen der NPCs. Q (oder der Quest-Knopf oben) öffnet das Quest-Fenster, rechts oben
+  verfolgt Win_QuestMinion die laufenden Quests: Klick auf den Quest-Titel öffnet links daneben die
+  Beschreibung (Win_QuestMinionDes, noch ein Klick schließt sie), "-" / "+" klappt eine Quest ein /
+  aus. Neue Figuren bekommen ihre Einstiegsquest
+  automatisch (Menschen-Krieger: "Zerrüttete Zuflucht" bei Lady Vestry, Adam, Lady Vestry; danach
+  bietet Lady Vestry "Greift zu den Waffen!" an). Belohnungen erscheinen im Chat.
+  Inventar und Charakter: B (oder der Knopf oben) öffnet das Inventar, C das Charakter-Fenster mit
+  Ausrüstung, Werten (Leben, Mana, Angriff, Verteidigung, Treffer, Ausweichen, Krit) und der Figur
+  (Ziehen dreht sie). Rechtsklick auf Ausrüstung im Inventar legt sie an, Rechtsklick auf einen Platz
+  im Charakter-Fenster legt sie ab; Gegenstände lassen sich auch ziehen (Tasche <-> Ausrüstung,
+  Plätze tauschen). Die Maus über einem Gegenstand zeigt Name, Werte und Bedingungen (nicht
+  erfüllte rot). Angelegte Ausrüstung trägt die Figur sichtbar (Rüstung, Waffe in der Hand), auch
+  für andere Spieler. Sammelpunkte (z.B. die Waffenregale bei Johnny): anklicken = hinlaufen und
+  sammeln, der Balken zeigt den Fortschritt, Bewegen bricht ab. So kommt der Krieger in der Quest
+  "Greift zu den Waffen!" an sein Novizen-Langschwert.
+  Kampf: ein Monster anklicken wählt es, ein zweiter Klick lässt die Figur hinlaufen und angreifen
+  (Normalangriff alle 2 s, solange es in Reichweite ist; flieht es, läuft sie hinterher).
+  Bewegungstasten oder ein Klick auf den Boden beenden den Angriff. Treffer erscheinen als Zahlen
+  über den Figuren (Krit groß in Gelb, eigener Schaden rot, "Verfehlt"), das Leben des Ziels im
+  Ziel-Fenster. Angegriffene Monster schlagen zurück und verfolgen die Figur, bis sie zu weit von
+  ihrem Platz weg sind. Besiegte Monster geben EXP (Chat) und kommen nach ihrer Zeit wieder; Quests
+  mit "Monster töten" zählen mit (Verfolgung z.B. "Bestienknochen 3/10"). Stirbt die Figur, erscheint
+  "Ihr seid gestorben!" - "Wiederbeleben" bringt sie mit 10 % Leben zum Wiederbelebungspunkt.
+  Fertigkeiten: K (oder der Knopf oben) öffnet die Fertigkeiten (Win_BaseSkill, 15 je Seite) mit
+  Symbol, Name und Stufe; die Maus darüber zeigt die Beschreibung wie im Spiel (Mana, Zauberzeit,
+  Element, Abklingzeit, Reichweite, Wirkung - aus den Lua-Skripten der Spieldaten, in der Sprache des
+  Clients). Neu gelernte Fertigkeiten erscheinen im Fenster "Neue Fertigkeiten" (Win_NewSKill); von dort
+  oder aus K zieht man sie in die Schnellleiste unten oder rechts (je 10 Plätze, mit Tooltip). In der
+  Leiste verschiebt / tauscht Ziehen die Plätze, Herausziehen leert einen Platz; Schließen von "Neue
+  Fertigkeiten" legt die übrigen weg. Leisten und Fertigkeiten speichert der Server. Eine neue Figur
+  beginnt mit den zwei Startfertigkeiten ihrer Klasse (clsconfig, z.B. Krieger Hieb und Überfall,
+  Magier Feuerball und Eispfeil) und dem Stadtportal.
+  Einsetzen (Fertigkeiten-Fahrplan F2, Plugin Docs/Fertigkeiten-Fahrplan.txt): Tasten 1 - 0 (Leiste unten)
+  oder ein Klick auf einen Platz der Leisten setzen die Fertigkeit auf das gewählte Monster ein. Ist es
+  zu weit weg, läuft die Figur heran. Die Figur zaubert mit der Aktion der Fertigkeit (samt Feuer in der
+  Hand, Klängen ... aus der .ecm), der Balken zeigt den Namen und den Fortschritt; Bewegen bricht ab.
+  Dann trifft sie (Flug- und Treffer-GFX wie beim Normalangriff), Mana sinkt, und auf dem Symbol läuft
+  die Abklingzeit-Uhr ab; ohne genug Mana ist das Symbol dunkler. Fehlt etwas, steht es im Chat (kein
+  Ziel, nicht genug Mana, noch nicht bereit, zu weit). Danach setzt der Normalangriff ein (wie im
+  Spiel). Die Werte (Mana, Zauberzeit, Abklingzeit, Weite, Schaden) rechnet der Server mit den Formeln
+  der Editor-Datenbank des Originals. Bisher gehen Angriffs- und Fluch-Fertigkeiten auf ein Ziel ohne
+  Bewegung (z.B. Hieb, Feuerball, Eispfeil, Ermorden, Göttlicher Schlag); Heilen, Überfall, Stadtportal folgen
+  in F6.
+  Statuseffekte (F3): Fertigkeiten legen ihre Effekte wie im Original an - auf das Ziel nur bei einem Treffer
+  (z.B. Feuerball: 50 % Brennen, 5 s je 30 Schaden), auf sich selbst beim Wirken. Der Server rechnet Dauer,
+  Stapel und Überdeckung, Schaden und Heilung über Zeit (Zahlen über der Figur), geänderte Werte (Angriff,
+  Abwehr, Treffer, Ausweichen, Krit, Leben / Mana, Tempo) im Kampf; Effekte enden nach ihrer Zeit, beim Tod
+  oder wenn ein Monster an seinen Platz zurückkehrt. Der Client kennt die Effekte jeder Figur in Sicht;
+  Betäuben / Wurzeln / Schweigen wirken ab F5.
+  Anzeige (F4): die eigenen Effekte stehen oben rechts (Win_Buff wie im Spiel: Stärkungen in der ersten
+  Reihe, Schwächungen ab der nächsten, Restzeit darunter, unter 30 s rot, Stapelzahl auf dem Symbol), die
+  des Ziels im Ziel-Fenster (obere Reihe Stärkungen, untere Schwächungen). Mit der Maus darüber: Text des
+  Effekts und Restzeit. Symbole, Art und Texte kommen aus den Spieldaten (configs buff_type / buff_icon /
+  buff_str, Atlas iconlist_state; Plugin Data/angelica_buffs.gd). Effekte mit sichtbarem Zustand zeigen
+  ihr GFX an der Figur (buff_gfx.lua, z.B. Flammen am Rücken beim Brennen) - bei allen Figuren in Sicht.
+  Effekte (wie CECModel::PlayAttackAction): jede Angriffs-Aktion hat in ihrer .ecm Angriffspunkte
+  (Ereignis 104, z.B. Schwert 350 ms, Magierstab 750 ms, Dolch zweimal). Dort startet ihre .att
+  (gfx\SkillAttack\): Flug-GFX vom Angreifer zum Ziel (der Energieball des Magiers, 30 m/s im
+  Bogen) und beim Einschlag das Treffer-GFX am Ziel (Funken, Blut, Blitz ... - auch für Monster).
+  Erst mit dem Einschlag erscheinen Schadenszahl, Treffer-Aktion und das Leben im Ziel-Fenster;
+  ein Monster bzw. die eigene Figur stirbt sichtbar erst danach. Die GFX baut der Client zur Laufzeit
+  aus den Spieldaten (nichts wird geschrieben; die eigenen schon im Ladebildschirm).
+  Waffen: außerhalb des Kampfes auf dem Rücken (Schwert, Stab, Zepter, Harfe, Gewehr, Hammer, Kreuz,
+  Sense - Ruhe-Haken HH_背_<Waffenart> des Skeletts) bzw. am Gürtel (Dolche, HH_腰_右 / 左); der
+  Assassine trägt zwei Dolche (linke Waffe aus models[] file_model_male_l). Ein Angriff oder Treffer
+  bringt die Figur 6 s in den Kampfzustand (wie CECPlayer::SetIsFighting(true, 6000)): Waffen in der
+  Hand, Kampfhaltung und -rennen der Waffenart; im ersten Normalangriff wirbelt der linke Dolch (die
+  Aktion dreht den Waffen-Knochen). Gilt auch für andere Spieler.
+  Autoroute: grün unterstrichene NPC-Namen in Verfolgung, Beschreibung und Quest-Fenster sind Links -
+  ein Klick lässt die Figur über die Wegfindung (Wegekarte der Map: maps\<map>\movemaps) zum NPC
+  laufen, dort geht sein Fenster auf. Ist der NPC nicht in Sicht, kommt sein Ort aus
+  data\task_npc.data; steht er in einem anderen Gebiet, meldet das der Chat. Orte in Quest-Texten
+  (z.B. "Waffenregal") sind ebenso grüne Links. Linksklick auf die
+  Minimap läuft zu diesem Punkt (Ziel-Marke auf der Minimap). Bewegungstasten oder ein Klick in die
+  Welt brechen ab; kommt die Figur nicht weiter, sucht sie bis zu zweimal neu, dann bricht sie mit
+  einer Meldung ab. Die Minimap zeigt das Kartenbild (surfaces\minimaps, Lage aus
+  script\InstanceWorld.lua) waagrecht gespiegelt, weil die Maps in Godot die Angelica-Koordinaten
+  behalten und die Welt dadurch gespiegelt erscheint; so passt sie zur sichtbaren Welt (die
+  Buchstaben O / W am Rahmen gehören zum Original-Bild).
+  Die Startmap muss im Editor importiert sein (Leiste ECM-GFX-MAP), z.B. s9 für Menschen und Zwerge,
+  s10 Elfen / Steinmenschen, s11 Kindred, s31 Werwölfe. Der Map-Import holt seit Schritt 7 auch
+  die Modelle der NPCs und Monster der Map (res://ECM_Import/models/...). Bei einer früher
+  importierten Map baut der Client fehlende Modelle beim Betreten aus den Spieldaten (ohne die
+  angehängten Effekte, z.B. das Leuchten am Postkasten; s9: 29 Modelle, gut 1 s im
+  Ladebildschirm) und meldet das in der Ausgabe; für die vollen Modelle die Map neu importieren.
+  Maps, die vor dem 2.11.2026 importiert wurden, haben auch kein Licht (Sonne / Umgebungslicht):
+  der Client ergänzt es aus den Spieldaten (sonst wären Figuren und NPCs schwarz). Neu
+  importieren bringt Licht, Spawns und NPC-Modelle mit Effekten in die Map-Szene selbst.
+  NPCs und Monster: der Server erzeugt sie beim Start (Plugin Server/npc_templates.json und
+  Server/data/<Ordner>/); Monster laufen umher, solange ein Spieler in der Nähe ist. Höhen auf
+  dem Server gibt es für die Startmaps (Server/data/s9, s10, s11, s31: terrain.cfg, map/1.hmap);
+  auf den übrigen Maps bleibt die Höhe des Spawn-Gebiets.
+
+Dateien des Servers (user://server/ = ~/.local/share/godot/app_userdata/<Projekt>/server/)
+  game.db      Spielstände (SQLite, WAL); Sicherung: Server stoppen, game.db* kopieren
+  server.log   Log (alle 60 s eine Zeile "Last", solange Figuren in der Welt sind), status.json
+               Spieler online und Last je 10 s (Takt-Dauer Ø / max, längstes Bild, Netz kB/s),
+               stop -> Server endet sauber (speichert alle Figuren: Ort, Leben, Mana)
+  dtls.key / dtls.crt   mit --dtls einmal erzeugt; dtls.key geheim halten, dtls.crt dürfen
+               Clients haben (--dtls_cert, dann prüft der Client das Zertifikat)
+
+Sicherheit
+  - Passwörter nur als Hash in der DB, nie im Log; unbekanntes Konto und falsches Passwort
+    geben dieselbe Antwort.
+  - Nach 5 Fehlversuchen je Konto in 5 Minuten ist die Anmeldung gesperrt (auch mit richtigem
+    Passwort), bis der älteste Versuch 5 Minuten zurückliegt; je Adresse 30 Fehlversuche und
+    10 neue Konten je Stunde (nicht für 127.0.0.1, wegen der Tests). Zähler nur im Speicher.
+  - Ein Konto nur einmal online: eine zweite Anmeldung wird abgewiesen (ACCOUNT_ONLINE), mit
+    "Anmeldung erzwingen" (Protokoll 2, login.force) trennt sie stattdessen die alte Sitzung (auch
+    eine hängende: so kommt man nach einem Absturz des Clients sofort wieder hinein).
+  - Den Passwort-Hash rechnet ein Hintergrund-Thread; der Server läuft dabei weiter. Godots
+    Krypto-Aufrufe sperren sich gegenseitig: gut 10 Anmeldungen je Sekunde, gleichzeitige warten.
+  - Mehr als 60 Anfragen je Sekunde trennen die Verbindung; ohne "hello" nach 15 s, ohne
+    Anmeldung nach 5 Minuten getrennt; kaputte oder zu große Pakete (> 64 KB) werden verworfen.
+  - Ohne --dtls ist die Verbindung unverschlüsselt (Passwort lesbar im Netz): nur LAN / localhost.
+    Vor dem Betrieb im Internet Server und Clients mit --dtls (bzw. dtls = true) starten.
+
+Export (Projekt -> Exportieren), einmal einrichten:
+  1. Projekteinstellungen (Erweitert): Eintrag "application/run/main_scene.fw_game" hinzufügen,
+     Wert res://game/main.tscn. Die normale Hauptszene des Projekts bleibt, wie sie ist.
+  2. Vorlage "Linux Client": Plattform Linux, Merkmale -> Eigene: fw_game,
+     Ressourcen -> Filter für Nicht-Ressourcen:
+     addons/PWE-Manager/Server/data/*,game/client/ui/*.xml
+  3. Vorlage "Linux Server": wie 2., dazu Ressourcen -> Exportmodus "Dedizierter Server" und
+     Filter zum Ausschließen ECM_Import/* (die Maps braucht nur der Client).
+     Der Server startet dann ohne Fenster und ohne --server.
+  4. Windows: gleiche Vorlagen mit Plattform Windows (Export-Vorlagen für Windows nötig;
+     installiert sind nur die für Linux).
+  Getestet (Linux): exportierter Server und exportierter Client (--headless -- --bot) verbinden
+  sich, 58 / 58 Prüfungen (Schritt 6); Schritt 7: exportierter Server mit NPCs, Bot 61 / 61.
+  Für die Welt im Export: die importierten Maps (res://ECM_Import, mit den NPC-Modellen) sind
+  Ressourcen und kommen mit in den Export (groß); map.bht, Höhen und Spawns über den Filter
+  Server/data/*. Die Spieldaten (Stock-PWE-Client) sind nicht im Export: der exportierte Client zeigt
+  den Login im Spielstil mit --data_root=<Ordner der Spieldaten> (oder data_root in
+  settings.cfg), sonst das einfache Fenster.
+
+Bekannte Meldungen
+  - Beim Beenden eines Servers mit --dtls: 3x "Parameter p_mutex->mutex is null" (Godot 4.7,
+    beim Schließen des DTLS-Servers; harmlos).
+  - Kaputte Pakete eines Clients: "Condition len < 4 is true" o.ä. im Server-Log der Konsole.
+  - Der allererste Import eines Projekts mit addons/sqlite3.gd bricht einmal ab, danach nicht mehr.

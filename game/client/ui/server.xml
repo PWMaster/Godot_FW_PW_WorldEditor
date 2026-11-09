@@ -1,0 +1,53 @@
+﻿<DIALOG Name="Win_Server" Width="429" Height="216" CanEscClose="true">
+	<Resource>
+		<FrameImage FileName="MsgBoxFrame.tga"/>
+	</Resource>
+	<LABEL Name="Lab_Title" x="214" y="24" Align="1">
+		<Text String="Server" FontName="方正隶二简体" FontSize="14" Shadow="255" Color="243,241,213,255"/>
+	</LABEL>
+	<LABEL Name="Lab_Host" x="150" y="67" Align="2">
+		<Text String="Adresse:" FontName="方正细黑一简体" FontSize="12" Shadow="255"/>
+	</LABEL>
+	<EDIT Name="Edt_Back1" x="160" y="59" Width="172" Height="32" ReadOnly="true">
+		<Resource>
+			<FrameImage FileName="SM2\login\inputback.tga"/>
+		</Resource>
+	</EDIT>
+	<EDIT Name="DEFAULT_Edt_Host" x="172" y="65" Width="150" Height="21" MaxLen="64">
+		<Text FontName="方正隶二简体" FontSize="12" Shadow="255" Color="184,240,246,255"/>
+	</EDIT>
+	<LABEL Name="Lab_Port" x="150" y="109" Align="2">
+		<Text String="Port:" FontName="方正细黑一简体" FontSize="12" Shadow="255"/>
+	</LABEL>
+	<EDIT Name="Edt_Back2" x="160" y="101" Width="172" Height="32" ReadOnly="true">
+		<Resource>
+			<FrameImage FileName="SM2\login\inputback.tga"/>
+		</Resource>
+	</EDIT>
+	<EDIT Name="Edt_Port" x="172" y="107" Width="150" Height="21" MaxLen="5">
+		<Text FontName="方正隶二简体" FontSize="12" Shadow="255" Color="184,240,246,255"/>
+	</EDIT>
+	<CHECK Name="Chk_Dtls" x="160" y="140" Width="24" Height="25" Align="2" TextOffsetX="1">
+		<Text String="Verschlüsselt (DTLS)" FontName="方正细黑一简体" FontSize="12" Shadow="255"/>
+		<Resource>
+			<NormalImage FileName="SM2\login\logincheckbox.tga"/>
+			<CheckedImage FileName="SM2\login\logincheckbox2.tga"/>
+		</Resource>
+	</CHECK>
+	<STILLIMAGEBUTTON Name="Btn_Ok" x="122" y="176" Width="82" Height="23" Command="IDOK">
+		<Text String="OK" FontName="方正隶二简体" FontSize="12" Shadow="255" Color="164,228,255,255"/>
+		<Resource>
+			<FrameUpImage FileName="SM2\button\button1.tga"/>
+			<FrameDownImage FileName="SM2\button\button3.tga"/>
+			<FrameOnHoverImage FileName="SM2\button\button3.tga"/>
+		</Resource>
+	</STILLIMAGEBUTTON>
+	<STILLIMAGEBUTTON Name="Btn_Cancel" x="226" y="176" Width="82" Height="23" Command="IDCANCEL">
+		<Text String="Abbrechen" FontName="方正隶二简体" FontSize="12" Shadow="255" Color="164,228,255,255"/>
+		<Resource>
+			<FrameUpImage FileName="SM2\button\button1.tga"/>
+			<FrameDownImage FileName="SM2\button\button3.tga"/>
+			<FrameOnHoverImage FileName="SM2\button\button3.tga"/>
+		</Resource>
+	</STILLIMAGEBUTTON>
+</DIALOG>
