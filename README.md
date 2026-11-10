@@ -42,6 +42,13 @@ an editor plugin that reads the original game data, plus a playable client/serve
   shown as icons with timers and tooltips plus visual effects on the character.
 - **Languages**: German, English and French.
 
+## What this fork adds
+
+- **Perfect World 1.5.5 support**: adds a matching data profile and import tools for playable character roles and class templates from the server's `ptemplate.conf`.
+- **On-demand world streaming**: loads terrain, buildings and nearby map objects from the original client data as you move, instead of requiring a fully prebuilt map scene. A free camera can inspect the streamed world independently of the character.
+- **Legacy character models**: supports older `.ski` v8 skin files and fallback model paths used by PW 1.5.5 characters.
+- **More reliable local server workflow**: improves server shutdown and process monitoring, and includes tests for login, world interactions, restarts and reconnects.
+
 ## Getting started
 
 1. Install **Godot 4.7** and the SQLite GDExtension
