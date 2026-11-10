@@ -97,7 +97,7 @@ func enter(peer: int, info: Dictionary) -> void:
 		inventory.apply_stats(players[peer])
 	if skills != null:
 		skills.load_player(players[peer], templates.get("%d_%d_%d" % [c["race"], c["class"], c["gender"]], {}))
-	log_line.call("Welt: %s betritt %s bei %s - %d in der Welt" % [c["name"], info["map"], _fmt(players[peer]["pos"]), players.size()])
+	log_line.call("Мир: %s вошёл на карту %s в точке %s; игроков в мире: %d" % [c["name"], info["map"], _fmt(players[peer]["pos"]), players.size()])
 
 func leave(peer: int) -> void:
 	var p = players.get(peer)
@@ -113,7 +113,7 @@ func leave(peer: int) -> void:
 		if players[other]["seen"].has(p["id"]):
 			players[other]["seen"].erase(p["id"])
 			net.push(other, "player_leave", {"id": p["id"]})
-	log_line.call("Welt: %s verlässt %s bei %s - %d in der Welt" % [p["name"], p["map"], _fmt(p["pos"]), players.size()])
+	log_line.call("Мир: %s покинул карту %s в точке %s; игроков в мире: %d" % [p["name"], p["map"], _fmt(p["pos"]), players.size()])
 
 func move(peer: int, pos: Vector3, dir: float, state: int) -> void:
 	var p = players.get(peer)
@@ -379,7 +379,7 @@ func save(peer: int) -> void:
 	p["saved"] = Time.get_ticks_msec()
 	if not db.run("UPDATE characters SET map = ?, world = ?, pos_x = ?, pos_y = ?, pos_z = ?, dir = ?, hp = ?, mp = ? WHERE id = ?",
 			[p["map"], p["world"], p["pos"].x, p["pos"].y, p["pos"].z, p["dir"], p["hp"], p["mp"], p["id"]]):
-		log_line.call("FEHLER Datenbank: " + db.last_error)
+		log_line.call("ОШИБКА базы данных: " + db.last_error)
 
 func save_all() -> void:
 	for peer in players:

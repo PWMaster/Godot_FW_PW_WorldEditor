@@ -49,14 +49,14 @@ func _init() -> void:
 	var bar = HBoxContainer.new()
 	box.add_child(bar)
 	_play_btn = Button.new()
-	_play_btn.text = "Play-GFX"
-	_play_btn.tooltip_text = "GFX ab der Zeit am Regler laufen lassen"
+	_play_btn.text = "Воспроизвести GFX"
+	_play_btn.tooltip_text = "Запустить GFX с выбранного момента"
 	_play_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_play_btn.pressed.connect(play)
 	bar.add_child(_play_btn)
 	_stop_btn = Button.new()
-	_stop_btn.text = "Stop-GFX"
-	_stop_btn.tooltip_text = "GFX anhalten und auf 0 setzen"
+	_stop_btn.text = "Остановить GFX"
+	_stop_btn.tooltip_text = "Остановить GFX и вернуть время в начало"
 	_stop_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_stop_btn.pressed.connect(stop)
 	bar.add_child(_stop_btn)
@@ -64,7 +64,7 @@ func _init() -> void:
 	_slider = HSlider.new()
 	_slider.min_value = 0.0
 	_slider.step = 1.0
-	_slider.tooltip_text = "Zeit der GFX (ms)"
+	_slider.tooltip_text = "Время GFX (мс)"
 	_slider.value_changed.connect(seek)
 	_slider.drag_started.connect(_on_drag_started)
 	_slider.drag_ended.connect(_on_drag_ended)
@@ -183,11 +183,11 @@ func refresh_targets() -> void:
 		_length_ms = maxf(_length_ms, h.player_length_ms())
 	_slider.max_value = _length_ms
 	if root == null:
-		_info.text = "Keine Szene offen"
+		_info.text = "Сцена не открыта"
 	elif _targets.is_empty():
-		_info.text = "Keine GFX in der Szene"
+		_info.text = "В сцене нет GFX"
 	else:
-		_info.text = "%s: %d GFX" % ["Auswahl" if from_selection else "Szene", _targets.size()]
+		_info.text = "%s: объектов GFX — %d" % ["Выделение" if from_selection else "Сцена", _targets.size()]
 	var names = PackedStringArray()
 	for h in _targets.slice(0, 30):
 		names.append(str(root.get_path_to(h)))

@@ -33,7 +33,7 @@ var _result = {}
 
 
 func _init() -> void:
-	title = "ABGLEICH"
+	title = "СВЕРКА"
 	layout_key = "PWE-Abgleich"
 	icon_name = &"Search"
 	default_slot = DOCK_SLOT_BOTTOM
@@ -43,16 +43,16 @@ func _init() -> void:
 	add_child(box)
 	var bar = HBoxContainer.new()
 	box.add_child(bar)
-	_client = _field(bar, "Client:", "Ordner des Spiel-Clients (mit seinen .pck)")
-	_server = _field(bar, "Server:", "Ordner der Server-Daten (darin gamed/gs.conf)")
+	_client = _field(bar, "Клиент:", "Папка клиента игры (с его .pck)")
+	_server = _field(bar, "Сервер:", "Папка серверных данных (внутри gamed/gs.conf)")
 	_run_btn = Button.new()
-	_run_btn.text = "Prüfen"
-	_run_btn.tooltip_text = "Versionen, Quests, Maps, Vorlagen und NPC-Höhen vergleichen"
+	_run_btn.text = "Проверить"
+	_run_btn.tooltip_text = "Сравнить версии, квесты, карты, шаблоны и высоты НПС"
 	_run_btn.pressed.connect(start_check)
 	bar.add_child(_run_btn)
 	_save_btn = Button.new()
-	_save_btn.text = "Bericht speichern"
-	_save_btn.tooltip_text = "Bericht nach " + REPORT_FILE + " schreiben"
+	_save_btn.text = "Сохранить отчёт"
+	_save_btn.tooltip_text = "Сохранить отчёт в " + REPORT_FILE
 	_save_btn.disabled = true
 	_save_btn.pressed.connect(save_report)
 	bar.add_child(_save_btn)
@@ -85,7 +85,7 @@ func _init() -> void:
 	_report = TextEdit.new()
 	_report.editable = false
 	_report.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_report.placeholder_text = "Bericht des Abgleichs (\"Prüfen\")"
+	_report.placeholder_text = "Отчёт сверки появится после нажатия «Проверить»"
 	box.add_child(_report)
 
 func _ready() -> void:
@@ -129,7 +129,7 @@ func start_check() -> void:
 	_run_btn.disabled = true
 	_save_btn.disabled = true
 	_progress.value = 0.0
-	_status.text = "Prüfe ..."
+	_status.text = "Проверка..."
 	_thread = Thread.new()
 	_thread.start(_worker.bind(_client.text.strip_edges(), _server.text.strip_edges()))
 
@@ -152,16 +152,16 @@ func _on_done(r: Dictionary) -> void:
 
 func show_result(r: Dictionary) -> void:
 	var score = float(r.get("score", -1.0))
-	_match.text = ("%.1f %%" % (score * 100.0)).replace(".", ",") if score >= 0.0 else "-"
-	_match.add_theme_color_override("font_color", Color(0.35, 0.85, 0.4) if score >= GOOD else (Color(0.95, 0.8, 0.3) if score >= FAIR else Color(0.95, 0.35, 0.3)))
+	_match.text = "PW 155" if r.get("profile", "") == "pw155" else (("%.1f %%" % (score * 100.0)).replace(".", ",") if score >= 0.0 else "-")
+	_match.add_theme_color_override("font_color", Color(0.45, 0.75, 1.0) if r.get("profile", "") == "pw155" else (Color(0.35, 0.85, 0.4) if score >= GOOD else (Color(0.95, 0.8, 0.3) if score >= FAIR else Color(0.95, 0.35, 0.3))))
 	_verdict.text = str(r.get("verdict", ""))
 	var parts = []
-	for k in [["quests", "Quests"], ["maps", "Maps"], ["templates", "Vorlagen"], ["heights", "NPC-Höhen"]]:
+	for k in [["quests", "Квесты"], ["maps", "Карты"], ["templates", "Шаблоны"], ["heights", "Высоты НПС"]]:
 		var s = float(r.get(k[0], {}).get("score", -1.0))
 		parts.append("%s %s" % [k[1], ("%.1f %%" % (s * 100.0)).replace(".", ",") if s >= 0.0 else "-"])
 	_parts.text = "   ".join(parts)
 	_report.text = Check.report_text(r)
-	_status.text = "Fertig in %.1f s" % float(r.get("seconds", 0.0)) if score >= 0.0 else "Abgleich nicht möglich"
+	_status.text = "Данные PW 155 загружены" if r.get("profile", "") == "pw155" else ("Готово за %.1f с" % float(r.get("seconds", 0.0)) if score >= 0.0 else "Сверка невозможна")
 	_progress.value = 1.0
 
 func save_report() -> void:
@@ -169,9 +169,9 @@ func save_report() -> void:
 		return
 	var f = FileAccess.open(REPORT_FILE, FileAccess.WRITE)
 	if f == null:
-		_status.text = REPORT_FILE + " nicht schreibbar"
+		_status.text = "Не удалось записать " + REPORT_FILE
 		return
 	f.store_string(Check.report_text(_result) + "\n")
 	f.close()
 	EditorInterface.get_resource_filesystem().update_file(REPORT_FILE)
-	_status.text = "Gespeichert: " + REPORT_FILE
+	_status.text = "Сохранено: " + REPORT_FILE

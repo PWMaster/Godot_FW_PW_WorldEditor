@@ -185,22 +185,22 @@ const CHAT_TEXT_COLOR = "ffffff"
 const SYSTEM_COLOR = "ff6a6a"
 const NAME_COLOR = Color(1, 1, 1)
 const TEXTS = {
-	"Deu": {"skill_level": "Stufe %d", "not_yet": "Noch nicht verfügbar.", "self": "Ihr", "end_talk": "Gespräch beenden", "talk_to": "Sprecht mit %s",
-		"quest_new": "Neue Quest: %s", "quest_done": "Quest erfüllt: %s", "quest_failed": "Quest gescheitert: %s",
-		"gain_exp": "Ihr erhaltet %d EXP.", "gain_item": "Ihr erhaltet: %s x%d", "gain_gold": "Ihr erhaltet %d Geld.",
-		"level_up": "Ihr habt Stufe %d erreicht!", "done_mark": "(erfüllt)", "quests_title": "Quests",
-		"desc": "Beschreibung:", "goal": "Ziel: %s", "award": "Belohnung: %s", "money": "%d Geld",
-		"route_start": "Autoroute zu %s (%d m).", "route_failed": "Kein Weg gefunden (%s).",
-		"route_stuck": "Autoroute abgebrochen: hier geht es nicht weiter.", "route_far": "%s ist in einem anderen Gebiet.",
-		"route_unknown": "Der Ort von %s ist unbekannt.", "map_point": "Kartenpunkt",
-		"slots": ["Waffe", "Handgelenk", "Schultern", "Körper", "Taille", "Beine", "Kopf", "Füße", "Hals", "Hilfswaffe",
-			"Ring", "Ring"], "item_dmg": "Angriff: %d - %d", "item_def": "Verteidigung: %d", "item_hp": "Leben: +%d",
-		"item_mp": "Mana: +%d", "item_hit": "Treffer: +%d", "item_range": "Reichweite: %.1f m", "item_lv": "Benötigt Stufe %d",
-		"item_prof": "Klasse: %s", "item_gender": "Geschlecht: %s", "genders": ["männlich", "weiblich"],
-		"item_race": "Eure Rasse kann das nicht tragen", "item_pile": "Anzahl: %d / %d", "item_price": "Verkaufswert: %d",
-		"gather": "Sammeln", "gather_none": "Nichts gefunden.", "prof_level": "%s  Stufe %d", "bag_full_quest": "Euer Inventar ist voll.",
-		"races": ["", "Mensch", "Elf", "Zwerg", "Steinmensch", "Kindred", "Werwolf"], "miss": "Verfehlt",
-		"skill_stopped": "Fertigkeit unterbrochen.", "buff_time": ["%d h", "%d m", "%d s"], "buff_left": "Restzeit: %s"},
+	"Deu": {"skill_level": "Уровень умения %d", "not_yet": "Пока недоступно.", "self": "Вы", "end_talk": "Завершить разговор", "talk_to": "Поговорить с %s",
+		"quest_new": "Новое задание: %s", "quest_done": "Задание выполнено: %s", "quest_failed": "Задание провалено: %s",
+		"gain_exp": "Получено опыта: %d.", "gain_item": "Получен предмет: %s x%d", "gain_gold": "Получено монет: %d.",
+		"level_up": "Достигнут уровень %d!", "done_mark": "(выполнено)", "quests_title": "Задания",
+		"desc": "Описание:", "goal": "Цель: %s", "award": "Награда: %s", "money": "%d монет",
+		"route_start": "Автопуть к %s (%d м).", "route_failed": "Путь не найден (%s).",
+		"route_stuck": "Автопуть остановлен: дальше пройти нельзя.", "route_far": "%s находится в другой области.",
+		"route_unknown": "Местоположение %s неизвестно.", "map_point": "Точка на карте",
+		"slots": ["Оружие", "Запястья", "Плечи", "Тело", "Пояс", "Ноги", "Голова", "Ступни", "Шея", "Дополнительное оружие",
+			"Кольцо", "Кольцо"], "item_dmg": "Атака: %d–%d", "item_def": "Защита: %d", "item_hp": "Здоровье: +%d",
+		"item_mp": "Мана: +%d", "item_hit": "Точность: +%d", "item_range": "Дальность: %.1f м", "item_lv": "Требуется уровень %d",
+		"item_prof": "Класс: %s", "item_gender": "Пол: %s", "genders": ["мужской", "женский"],
+		"item_race": "Ваша раса не может носить этот предмет", "item_pile": "Количество: %d / %d", "item_price": "Цена продажи: %d",
+		"gather": "Сбор ресурсов", "gather_none": "Ничего не найдено.", "prof_level": "%s  Уровень %d", "bag_full_quest": "Инвентарь заполнен.",
+		"races": ["", "Люди", "Эльфы", "Земные", "Каменные", "Киндреды", "Оборотни"], "miss": "Промах",
+		"skill_stopped": "Использование умения прервано.", "buff_time": ["%d ч", "%d мин", "%d с"], "buff_left": "Осталось: %s"},
 	"Eng": {"skill_level": "Level %d", "not_yet": "Not available yet.", "self": "You", "end_talk": "End conversation", "talk_to": "Talk to %s",
 		"quest_new": "New quest: %s", "quest_done": "Quest completed: %s", "quest_failed": "Quest failed: %s",
 		"gain_exp": "You receive %d EXP.", "gain_item": "You receive: %s x%d", "gain_gold": "You receive %d money.",
@@ -394,11 +394,11 @@ func setup(data_root: String, p_language: String, p_skin: int, p_map: String, wo
 	if aui.load_layout("%dgameui" % skin) == 0:
 		skin = 3 - skin
 		if aui.load_layout("%dgameui" % skin) == 0:
-			return "Dialog-Liste gameui fehlt"
+			return "Не найден список диалогов gameui"
 	for short in SHOWN + TARGETS.values() + [MENU, NPC, QUEST, QUEST_DES, INVENTORY, CHARACTER, PROGRESS, REVIVE, SKILLS, NEW_SKILLS]:
 		var d = aui.dialog("%d%s.xml" % [skin, short])
 		if d == null:
-			warnings.append("Dialog %d%s.xml fehlt" % [skin, short])
+			warnings.append("Не найден файл диалога %d%s.xml" % [skin, short])
 			continue
 		dialogs[short] = d
 		_hide_items(short, d)
@@ -2001,11 +2001,11 @@ func _read_map_data(data_root: String, world_id: int) -> void:
 			script_dir = p
 			break
 	if script_dir == "":
-		warnings.append("Lua-Skripte (%s/script) fehlen" % language)
+		warnings.append("Не найдены Lua-скрипты (%s/script)" % language)
 		return
 	var lua = load(LUA).new(files)
 	var path = files.resolve("instanceworld.lua", script_dir)
-	var err = lua.run_file(path) if path != "" else "InstanceWorld.lua fehlt"
+	var err = lua.run_file(path) if path != "" else "Не найден InstanceWorld.lua"
 	if err != "":
 		warnings.append(err)
 	var inst = lua.value("Instance")

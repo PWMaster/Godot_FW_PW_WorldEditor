@@ -74,7 +74,7 @@ func execute(root_node: Node):
 			_create_element_node(node, root_node, undo_redo, max_group_time)
 
 	undo_redo.commit_action()
-	print(_node_label(), " für ", target_nodes.size(), " ID_", _element_id(), "-Nodes erstellt.")
+	print(_node_label(), ": создано узлов ID_", _element_id(), ": ", target_nodes.size(), ".")
 
 
 func _get_max_time_for_header(header_node: Node) -> float:

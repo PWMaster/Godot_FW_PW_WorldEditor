@@ -172,7 +172,7 @@ static func _unary(p: Dictionary):
 static func _primary(p: Dictionary):
 	var t = _peek(p)
 	if t == null:
-		return _fail("Ausdruck fehlt")
+		return _fail("Отсутствует выражение")
 	if _take(p, "("):
 		var e = _ternary(p)
 		if e == null or not _take(p, ")"):

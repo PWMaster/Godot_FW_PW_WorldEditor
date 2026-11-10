@@ -14,6 +14,7 @@ extends RefCounted
 # ====================================================
 
 const Proto = preload("../common/protocol.gd")
+const Settings = preload("../common/settings.gd")
 const PLUGIN_SERVER = "res://addons/PWE-Manager/Server/"
 const MAX_CHARS = 8
 const NAME_MIN = 2
@@ -30,7 +31,7 @@ var _name_re = RegEx.new()
 func _init(p_db) -> void:
 	db = p_db
 	_name_re.compile("^\\p{L}[\\p{L}\\p{N}]{%d,%d}$" % [NAME_MIN - 1, NAME_MAX - 1])
-	var d = JSON.parse_string(FileAccess.get_file_as_string(PLUGIN_SERVER + "start_roles.json"))
+	var d = JSON.parse_string(FileAccess.get_file_as_string(Settings.server_data_path("start_roles.json")))
 	if d is Dictionary:
 		for r in d.get("roles", []):
 			templates["%d_%d_%d" % [r["race"], r["class"], r["gender"]]] = r

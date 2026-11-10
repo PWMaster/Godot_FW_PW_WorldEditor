@@ -105,8 +105,8 @@ const CHASE_FROM = 1.5 # m über der Reichweite: erst dann läuft die Figur nach
 const ATTACK_HOLD = 0.6 # s nach einem eigenen Treffer stehen bleiben
 const RING_COLORS = {"monster": Color(1.0, 0.3, 0.2), "npc": Color(0.55, 0.95, 0.25), "player": Color(1.0, 0.95, 0.7)}
 const TEXTS = {
-	"Deu": {"map_missing": "Die Map %s ist nicht importiert.\nIm Editor über die Leiste ECM-GFX-MAP importieren (%s).",
-		"model": "Die Figur konnte nicht gebaut werden: %s"},
+	"Deu": {"map_missing": "Карта %s не импортирована.\nИмпортируйте её в редакторе через панель ECM-GFX-MAP (%s).",
+		"model": "Не удалось создать модель персонажа: %s"},
 	"Eng": {"map_missing": "Map %s has not been imported.\nImport it in the editor with the ECM-GFX-MAP dock (%s).",
 		"model": "The character could not be built: %s"},
 	"Franz": {"map_missing": "La carte %s n'est pas importée.\nL'importer dans l'éditeur avec le panneau ECM-GFX-MAP (%s).",
@@ -238,7 +238,7 @@ func start(p_login, p_info: Dictionary) -> void:
 	if hud != null:
 		hud.aui.visible = true
 	if built_models > 0:
-		print("Welt: %d NPC-Modelle aus den Spieldaten gebaut (ohne Effekte); für die importierten Modelle die Map %s im Editor neu importieren (Leiste ECM-GFX-MAP)" % [built_models, map_name])
+		print("Мир: создано моделей НПС из игровых данных: %d (без эффектов). Чтобы обновить модели, повторно импортируйте карту %s через панель ECM-GFX-MAP." % [built_models, map_name])
 
 func _hide_loading() -> void:
 	if _loading != null:
@@ -317,7 +317,7 @@ func _load() -> String:
 			shape.set_faces(faces)
 			_buildings = _add_static("Gebaeude-Kollision", shape)
 	else:
-		warnings.append("keine map.bht für " + map_name)
+		warnings.append("Нет файла map.bht для карты " + map_name)
 	_progress(0.8)
 	await get_tree().process_frame
 	npc_data = NpcData.new()
@@ -370,14 +370,14 @@ func _load() -> String:
 	var qerr = _quest_thread.wait_to_finish()
 	_quest_thread = null
 	if qerr != "":
-		warnings.append("Quests: " + qerr)
+		warnings.append("Задания: " + qerr)
 	if _skill_thread != null:
 		while _skill_thread.is_alive():
 			await get_tree().process_frame
 		var serr = _skill_thread.wait_to_finish()
 		_skill_thread = null
 		if serr != "":
-			warnings.append("Fertigkeiten: " + serr)
+			warnings.append("Умения: " + serr)
 			skill_data = null
 	if _buff_thread != null:
 		while _buff_thread.is_alive():
@@ -446,7 +446,7 @@ func _make_hud() -> void:
 		quest_data.item_count = _bag_count
 		hud.quest_text = quest_data.format_text
 		for w in quest_data.warnings:
-			warnings.append("Quests: " + w)
+			warnings.append("Задания: " + w)
 		_icons = {}
 		_refresh_quests()
 	hud.say_requested.connect(_say)
@@ -473,14 +473,14 @@ func _ensure_light() -> void:
 		return
 	var imp = load(IMPORTER).new(str(login.settings.value("data_root")))
 	var trn2: String = imp.find_game_file("maps/%s/%s.trn2" % [map_name, map_name])
-	light_added = "Spieldaten" if trn2 != "" and load(WORLD).new(imp).build_light(trn2, map_root) else "Standard"
+	light_added = "игровые данные" if trn2 != "" and load(WORLD).new(imp).build_light(trn2, map_root) else "стандартное освещение"
 	if light_added == "Standard":
 		_default_light()
 	var objects = map_root.get_node_or_null("Objects")
 	if objects != null and objects.has_method("apply_time"):
 		objects.set("_light_night", null) # Tag / Nacht auf das neue Licht anwenden
 		objects.apply_time()
-	print("Welt: Map %s ohne Licht importiert, Licht (%s) ergänzt; für Licht, Spawns und NPC-Modelle die Map im Editor neu importieren (Leiste ECM-GFX-MAP)" % [map_name, light_added])
+	print("Мир: карта %s импортирована без освещения, добавлено освещение (%s). Чтобы обновить освещение, точки появления и модели НПС, повторно импортируйте карту через панель ECM-GFX-MAP." % [map_name, light_added])
 
 func _default_light() -> void:
 	var sun = DirectionalLight3D.new()
@@ -500,7 +500,7 @@ func _default_light() -> void:
 func _add_terrain_collision() -> void:
 	var terrain = map_root.get_node_or_null("Terrain")
 	if terrain == null:
-		warnings.append("Map ohne Terrain")
+		warnings.append("На карте отсутствует ландшафт")
 		return
 	for mi in terrain.get_children():
 		if mi is MeshInstance3D and mi.mesh != null:
@@ -959,7 +959,7 @@ func _check_talk() -> void:
 func _load_movemap(files_script: Script, data_root: String) -> String:
 	var files = files_script.new(data_root)
 	var dir: String = files.resolve("maps/%s/movemaps" % map_name)
-	return movemap.load(files, dir) if dir != "" else "maps/%s/movemaps fehlt" % map_name
+	return movemap.load(files, dir) if dir != "" else "Не найдены данные перемещения maps/%s/movemaps" % map_name
 
 # Autoroute nach goal (y zählt nur mit exact: Ziel auf der Ebene in dieser Höhe, sonst die unterste
 # begehbare); label für die Meldung; tid / npc: NPC, dessen Fenster am Ziel aufgeht; stop: so viele m

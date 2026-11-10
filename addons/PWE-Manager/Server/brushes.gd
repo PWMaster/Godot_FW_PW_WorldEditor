@@ -29,14 +29,14 @@ func read(path: String) -> String:
 	brushes = []
 	var b = FileAccess.get_file_as_bytes(path)
 	if b.size() < 12 or b.decode_u32(0) != MAGIC:
-		return path + ": keine map.bht"
+		return path + ": не найден map.bht"
 	if b.decode_u32(4) != VERSION:
-		return path + ": Version %d unbekannt" % b.decode_u32(4)
+		return path + ": неизвестная версия %d" % b.decode_u32(4)
 	var n = b.decode_s32(8)
 	var p = 12
 	for i in n:
 		if p + AABB_SIZE + 8 > b.size():
-			return path + ": endet vorzeitig (Brush %d)" % i
+			return path + ": файл неожиданно закончился в данных кисти %d" % i
 		var br = {"center": _vec(b, p), "extents": _vec(b, p + 12), "planes": [], "bevels": []}
 		p += AABB_SIZE + 4
 		var sides = b.decode_s32(p)

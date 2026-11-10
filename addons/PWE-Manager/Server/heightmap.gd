@@ -31,7 +31,7 @@ var _z0 = 0.0 # oberer Rand (+Z)
 func load_dir(dir: String) -> String:
 	var cfg = FileAccess.get_file_as_string(dir.path_join(CFG_FILE))
 	if cfg == "":
-		return dir.path_join(CFG_FILE) + " fehlt"
+		return "Не найден файл " + dir.path_join(CFG_FILE)
 	var v = {}
 	for line in cfg.split("\n"):
 		var eq = line.find("=")

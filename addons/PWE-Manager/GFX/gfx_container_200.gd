@@ -54,7 +54,7 @@ const NO_LOOP_MS = 1000000000.0 # GlobalLoopTime der Unter-GFX: kein eigener Neu
 ## Elemente, die diesen Container als DummyEle nutzen (nur zur Info)
 @export var Dummy_Users: String = ""
 ## Unter-GFX neu aus den Spieldaten aufbauen (nur im Editor)
-@export_tool_button("Unter-GFX neu laden", "Reload") var btn_reload = rebuild_sub_gfx
+@export_tool_button("Перезагрузить вложенные GFX", "Reload") var btn_reload = rebuild_sub_gfx
 
 @export_group("KeyPoints")
 @export var keypoints: Array = []

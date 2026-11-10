@@ -61,8 +61,8 @@ static func data_available(data_root: String, lang: String) -> bool:
 	if not DirAccess.dir_exists_absolute(data_root) or not ResourceLoader.exists(FILES):
 		return false
 	var files = load(FILES).new(data_root)
-	for base in [lang, "resources/" + lang]:
-		if files.resolve(base + "/interfaces") != "":
+	for interface_dir in [files.resolve(lang + "/interfaces"), files.resolve("resources/" + lang + "/interfaces"), files.resolve("interfaces1")]:
+		if interface_dir != "" and files.resolve("Login.xml", interface_dir) != "" and files.resolve("LoginControl.xml", interface_dir) != "":
 			return true
 	return false
 
@@ -93,9 +93,9 @@ func _init() -> void:
 
 func setup(data_root: String, lang: String) -> String:
 	if not ResourceLoader.exists(UI_BUILDER):
-		return "Plugin PWE-Manager fehlt"
+		return "Не найден плагин PWE-Manager"
 	if not data_available(data_root, lang):
-		return "Keine Oberfläche unter %s für Sprache %s" % [data_root, lang]
+		return "Не найдены файлы интерфейса в %s для языка %s" % [data_root, lang]
 	language = lang
 	ui = load(UI).new(data_root, lang)
 	builder = load(UI_BUILDER).new(ui)
@@ -136,7 +136,7 @@ func dialog(file_name: String) -> Dialog:
 		return _by_file[key]
 	var d = ui.read_dialog(file_name)
 	if d.is_empty():
-		_warn("Dialog %s nicht gefunden" % file_name)
+		_warn("Не найден диалог %s" % file_name)
 		return null
 	var dlg = _wrap(builder.build_dialog(d))
 	dlg.layout_pos = _layout.get(key, Vector2i(-1, -1))
@@ -159,7 +159,7 @@ func set_background(file_name: String) -> void:
 	var path = ui.surface(file_name)
 	var img = builder._images.image_file(path) if path != "" else null
 	if img == null:
-		_warn("Hintergrund %s nicht lesbar" % file_name)
+		_warn("Не удалось прочитать фон %s" % file_name)
 		_background.texture = null
 		return
 	if img.is_compressed():

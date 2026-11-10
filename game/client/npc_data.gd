@@ -46,7 +46,7 @@ func open(data_root: String, language: String, map_root: Node) -> String:
 	var files = load(FILES).new(data_root)
 	var path: String = elements_script.locate(files, language)
 	if path == "":
-		return "elements.data fehlt (%s/%s/data)" % [data_root, language]
+		return "Не найден elements.data (%s/%s/data)" % [data_root, language]
 	elements = elements_script.new()
 	return elements.open(path, files)
 
@@ -75,7 +75,7 @@ func info(tid: int) -> Dictionary:
 		var rel = elements.path_of(int(r.get("file_matter", 0)))
 		out["ecm"] = importer().find_game_file(rel) if rel != "" else ""
 	elif r.is_empty():
-		warnings.append("Vorlage %d nicht in elements.data" % tid)
+		warnings.append("Шаблон %d отсутствует в elements.data" % tid)
 	out["minimap"] = int(r.get("show_on_minimap", 1)) != 0 # Deko-Tiere (Name leer, nicht wählbar) nicht
 	if out["scene"] == "" and not r.is_empty():
 		if not out.has("ecm"):

@@ -105,7 +105,7 @@ func setup(p_login) -> String:
 	dlg_desc = aui.dialog("Create_ProfDesc.xml")
 	for d in _dialogs():
 		if d == null:
-			return "Dialog der Figurenauswahl fehlt (%s)" % ", ".join(aui.warnings)
+			return "Не удалось загрузить окно выбора персонажа (%s)" % ", ".join(aui.warnings)
 		for item_name in HIDDEN.get(d.dlg_name, []):
 			d.show_item(item_name, false)
 	dlg_list.command.connect(_on_list_command)

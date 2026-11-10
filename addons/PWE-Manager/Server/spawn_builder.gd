@@ -22,6 +22,7 @@ extends RefCounted
 # ====================================================
 
 const NpcGen = preload("npcgen.gd")
+const Settings = preload("../../../game/common/settings.gd")
 const Elements = preload("../Data/angelica_elements.gd")
 const NODE_NAME = "Spawns"
 const MAPS_FILE = "maps.json"
@@ -34,8 +35,7 @@ var warnings: Array = []
 
 
 static func server_dir() -> String:
-	var script: Script = NpcGen
-	return script.resource_path.get_base_dir()
+	return Settings.server_data_dir()
 
 # maps.json -> {Client-Map: [{folder, tag, type, match}, ...]}
 static func map_sources() -> Dictionary:
@@ -65,7 +65,7 @@ func open_elements(files, lang: String = "") -> RefCounted:
 		return null
 	var p: String = Elements.locate(files, lang if lang != "" else preferred_language())
 	if p == "":
-		warnings.append("Spawns: elements.data fehlt (<Sprache>/data), Marker ohne Namen")
+		warnings.append("Точки появления: не найден elements.data (<язык>/data), у маркеров нет имён")
 		return null
 	var el = Elements.new()
 	var err = el.open(p, files)

@@ -51,7 +51,7 @@ var built = 0 # gebaute GFX (Test)
 
 func setup(data_root: String) -> String:
 	if not ResourceLoader.exists(IMPORTER) or not ResourceLoader.exists(ATT):
-		return "Plugin PWE-Manager fehlt: keine Angriffs-Effekte"
+		return "Не найден плагин PWE-Manager: эффекты атак недоступны"
 	importer = load(IMPORTER).new(data_root)
 	importer.runtime = true
 	_att_script = load(ATT)

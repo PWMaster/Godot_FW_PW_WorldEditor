@@ -33,6 +33,8 @@ var _paths = PackedStringArray() # ECM-, GFX- und Map-Pfade relativ zu _root, so
 var _lower = PackedStringArray() # dieselben in Kleinbuchstaben für die Suche
 var _scan_time = ""
 var _thread: Thread = null
+var _scan_root = ""
+var _scan_type = TYPE_MAP
 var _abort = false
 var _folder_icon: Texture2D = null
 var _ecm_icon: Texture2D = null
@@ -45,6 +47,7 @@ var _type: OptionButton
 var _search: LineEdit
 var _rescan_btn: Button
 var _import_btn: Button
+var _stream_terrain: CheckBox
 var _status: Label
 var _tree: Tree
 var _search_timer: Timer
@@ -63,41 +66,46 @@ func _init() -> void:
 	box.add_child(bar)
 
 	var root_label = Label.new()
-	root_label.text = "Spieldaten:"
+	root_label.text = "Папка клиента:"
 	bar.add_child(root_label)
 	_root_edit = LineEdit.new()
 	_root_edit.custom_minimum_size.x = 220
-	_root_edit.tooltip_text = "Ordner mit den entpackten Spieldaten (Enter liest ihn neu ein)"
+	_root_edit.tooltip_text = "Сканируются только данные внутри этой папки. Нажмите Enter, чтобы пересканировать карты."
 	_root_edit.text_submitted.connect(_on_root_submitted)
 	bar.add_child(_root_edit)
 
 	_type = OptionButton.new()
-	_type.add_item("Alle", TYPE_ALL)
+	_type.add_item("Все", TYPE_ALL)
 	_type.add_item("ECM", TYPE_ECM)
 	_type.add_item("GFX", TYPE_GFX)
-	_type.add_item("Maps", TYPE_MAP)
-	_type.tooltip_text = "Welche Dateien die Liste zeigt"
-	_type.item_selected.connect(func(_i): _rebuild_tree())
+	_type.add_item("Карты", TYPE_MAP)
+	_type.tooltip_text = "Какие файлы показывать в списке"
+	_type.item_selected.connect(func(_i): start_scan())
 	bar.add_child(_type)
 
 	_search = LineEdit.new()
-	_search.placeholder_text = "ECM / GFX / Map suchen (Name oder Ordner) ..."
+	_search.placeholder_text = "Поиск ECM / GFX / карты по имени или папке..."
 	_search.clear_button_enabled = true
 	_search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_search.text_changed.connect(func(_t): _search_timer.start())
 	bar.add_child(_search)
 
 	_rescan_btn = Button.new()
-	_rescan_btn.text = "Neu einlesen"
+	_rescan_btn.text = "Обновить список"
 	_rescan_btn.pressed.connect(start_scan)
 	bar.add_child(_rescan_btn)
 
 	_import_btn = Button.new()
-	_import_btn.text = "Importieren"
-	_import_btn.tooltip_text = "Gewählte ECM / GFX / Map als Szene unter res://ECM_Import/ bauen und öffnen"
+	_import_btn.text = "Импортировать"
+	_import_btn.tooltip_text = "Создать сцену из выбранного ECM / GFX / карты в res://ECM_Import/ и открыть её"
 	_import_btn.disabled = true
 	_import_btn.pressed.connect(import_selected)
 	bar.add_child(_import_btn)
+	_stream_terrain = CheckBox.new()
+	_stream_terrain.text = "Сохранять в ресурсы"
+	_stream_terrain.button_pressed = false
+	_stream_terrain.tooltip_text = "Включено: заранее создать отдельные ресурсы карты для быстрой загрузки. Выключено: сохранить только разметку; игровые данные будут читаться из исходных файлов при движении игрока."
+	bar.add_child(_stream_terrain)
 
 	_status = Label.new()
 	_status.custom_minimum_size.x = 260
@@ -133,8 +141,9 @@ func _ready() -> void:
 	_dim_color = editor_theme.get_color(&"font_disabled_color", &"Button")
 	_root = str(EditorInterface.get_editor_settings().get_project_metadata(META_SECTION, "root", DEFAULT_ROOT))
 	_root_edit.text = _root
-	if not _load_cache():
-		start_scan()
+	_type.select(TYPE_MAP)
+	_set_paths(PackedStringArray())
+	_set_status("Выбран быстрый список карт. Нажмите «Обновить список».")
 
 # Plugin aus / Editor zu: laufendes Einlesen abbrechen. Nicht in _exit_tree: der Editor
 # hängt die Leiste beim Verschieben in einen anderen Bereich nur um.
@@ -160,14 +169,26 @@ func start_scan() -> void:
 		_rebuild_tree()
 		return
 	_abort = false
+	_scan_root = _root
+	_scan_type = _type.get_selected_id()
 	_rescan_btn.disabled = true
-	_set_status("Lese ein ...")
+	_import_btn.disabled = true
+	_set_status("Сканирование внутри выбранной папки начато...")
 	_thread = Thread.new()
-	_thread.start(_scan_worker.bind(_root, Files.new(_root)))
+	var err = _thread.start(_scan_worker.bind(_scan_root, Files.new(_scan_root), _scan_type))
+	if err != OK:
+		_thread = null
+		_rescan_btn.disabled = false
+		_set_status("Не удалось запустить сканирование (код %d)." % err)
 
-func _scan_worker(root: String, files) -> void:
+func _scan_worker(root: String, files, scan_type: int) -> void:
 	var found = PackedStringArray()
 	var stack = [""]
+	if scan_type == TYPE_MAP:
+		stack.clear()
+		for dir_name in files.list_dir(root)["dirs"]:
+			if dir_name.to_lower() == "maps":
+				stack.append(dir_name)
 	var dirs = 0
 	while not stack.is_empty() and not _abort:
 		var rel: String = stack.pop_back()
@@ -178,13 +199,14 @@ func _scan_worker(root: String, files) -> void:
 				found.append(f if rel == "" else rel + "/" + f)
 		for sub in l["dirs"]:
 			stack.append(sub if rel == "" else rel + "/" + sub)
-		if dirs % PROGRESS_EVERY == 0:
-			_on_scan_progress.call_deferred(dirs, found.size())
+		if dirs % 25 == 0:
+			_on_scan_progress.call_deferred(dirs, found.size(), rel)
 	_on_scan_finished.call_deferred(found, _abort)
 
-func _on_scan_progress(dirs: int, count: int) -> void:
+func _on_scan_progress(dirs: int, count: int, current_dir: String) -> void:
 	if _thread != null:
-		_set_status("Lese ein ... %s Ordner, %s ECM / GFX / Maps" % [_fmt(dirs), _fmt(count)])
+		var progress = "папок %s, файлов %s" % [_fmt(dirs), _fmt(count)]
+		_set_status("Сканирование: %s · %s" % [progress, current_dir])
 
 func _on_scan_finished(found: PackedStringArray, aborted: bool) -> void:
 	if _thread == null:
@@ -194,10 +216,15 @@ func _on_scan_finished(found: PackedStringArray, aborted: bool) -> void:
 	_rescan_btn.disabled = false
 	if aborted:
 		return
+	if _scan_root != _root or _scan_type != _type.get_selected_id():
+		start_scan()
+		return
 	_scan_time = Time.get_datetime_string_from_system(false, true)
 	_set_paths(found)
 	_save_cache()
 	_rebuild_tree()
+	if _scan_type == TYPE_MAP and found.is_empty():
+		_set_status("В папке maps не найдены файлы карт .trn2.")
 
 func _set_paths(paths: PackedStringArray) -> void:
 	paths.sort()
@@ -252,9 +279,9 @@ func _rebuild_tree() -> void:
 	_import_btn.disabled = true
 	var root_item = _tree.create_item()
 	if not DirAccess.dir_exists_absolute(_root):
-		_set_status(_root + " fehlt")
+		_set_status("Папка не найдена: " + _root)
 		var hint = _tree.create_item(root_item)
-		hint.set_text(0, "Den Spiel-Client (mit seinen .pck) als " + _root.get_file() + " ins Projekt kopieren, dann \"Neu einlesen\".")
+		hint.set_text(0, "Укажите существующую папку клиента PW или FW и нажмите «Обновить список».")
 		return
 	var query = _search.text.strip_edges().to_lower()
 	var type = _type.get_selected_id()
@@ -281,9 +308,9 @@ func _rebuild_tree() -> void:
 	_fill_folder(root_item, top, "", 0, query != "" and shown <= EXPAND_LIMIT)
 	var what = "%s ECM, %s GFX, %s Maps" % [_fmt(counts["ecm"]), _fmt(counts["gfx"]), _fmt(counts["trn2"])]
 	if query != "":
-		_set_status("Treffer: " + what)
+		_set_status("Найдено: " + what)
 	else:
-		_set_status(what + (("  ·  eingelesen " + _scan_time) if _scan_time != "" else ""))
+		_set_status(what + (("  ·  загружено " + _scan_time) if _scan_time != "" else ""))
 
 func _new_folder() -> Dictionary:
 	return {"dirs": {}, "files": [], "count": 0}
@@ -369,24 +396,26 @@ func import_selected() -> void:
 func import_file(path: String) -> Dictionary:
 	var fs = EditorInterface.get_resource_filesystem()
 	if fs.is_scanning():
-		_set_status("Warte auf den Datei-Scan des Editors ...")
+		_set_status("Ожидание сканирования файлов редактором...")
 		while fs.is_scanning():
 			await get_tree().process_frame
 	var importer = preload("ecm_importer.gd").new(_root)
+	importer.progress_callback = Callable(self, "_set_status")
+	importer.save_resources = _stream_terrain.button_pressed
 	var ext = path.get_extension().to_lower()
-	var kind = {"gfx": "GFX", "trn2": "Map"}.get(ext, "ECM")
-	_set_status(kind + " wird importiert ...")
+	var kind = {"gfx": "GFX", "trn2": "Карта"}.get(ext, "ECM")
+	_set_status("Импортируется " + kind + "...")
 	var res: Dictionary
 	match ext:
 		"gfx": res = importer.import_gfx(path)
-		"trn2": res = importer.import_map(path)
+		"trn2": res = await importer.import_map(path)
 		_: res = importer.import_ecm(path)
 	if res.has("error"):
-		_set_status("Import fehlgeschlagen: " + res["error"])
-		printerr(kind, "-Import ", path, ": ", res["error"])
+		_set_status("Ошибка импорта: " + res["error"])
+		printerr("Ошибка импорта ", kind, " ", path, ": ", res["error"])
 		return res
 	for w in res["warnings"]:
-		print(kind, "-Import ", path.get_file(), ": ", w)
+		print("Предупреждение импорта ", kind, " ", path.get_file(), ": ", w)
 	_refresh_filesystem(res.get("written", [res["scene"]]))
 	# Offene Szene neu laden; reload_scene_from_path bleibt beim aktiven Tab, also danach wechseln
 	if res["scene"] in EditorInterface.get_open_scenes():
@@ -395,7 +424,7 @@ func import_file(path: String) -> Dictionary:
 		await get_tree().process_frame
 	EditorInterface.open_scene_from_path(res["scene"])
 	var n = res["warnings"].size()
-	_set_status("Importiert: " + res["scene"] + ((" (%d Hinweise in der Ausgabe)" % n) if n > 0 else ""))
+	_set_status("Импортировано: " + res["scene"] + ((" (предупреждений: %d, см. вывод)" % n) if n > 0 else ""))
 	return res
 
 # Alter Name (Tests, Aufrufer von früher)

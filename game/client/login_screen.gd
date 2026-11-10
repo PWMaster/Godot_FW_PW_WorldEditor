@@ -30,23 +30,27 @@ const HIDDEN = {
 	"Win_Login": ["Btn_Link", "Chk_Third"],
 	"Win_LoginControl": ["Btn_QSBStipple", "Btn_ResetPass"],
 }
-const STF_EMPTY_FIELDS = 203
-const STF_WAIT = 205
-const STF_TIMEOUT = 226
 const SERVER_NAME_CHARS = 15
 
 # Texte der eigenen Dialoge (Steuerelement -> Text) und Meldungen, je Sprachordner
 const TEXTS = {
 	"Deu": {
-		"Win_Register": {"Lab_Title": "Konto anlegen", "Lab_Account": "Konto:", "Lab_Password": "Passwort:",
-			"Lab_Password2": "Wiederholen:", "Lab_Rules": "Konto 4 - 20 Zeichen, Passwort mindestens 6",
-			"Btn_Create": "Anlegen", "Btn_Cancel": "Abbrechen"},
-		"Win_Server": {"Lab_Title": "Server", "Lab_Host": "Adresse:", "Lab_Port": "Port:",
-			"Chk_Dtls": "Verschlüsselt (DTLS)", "Btn_Ok": "OK", "Btn_Cancel": "Abbrechen"},
-		"placeholder": {"DEFAULT_Txt_Account": "Konto", "Txt_PassWord": "Passwort"},
-		"password_mismatch": "Die Passwörter stimmen nicht überein.",
-		"registered": "Konto %s wurde angelegt. Du kannst dich jetzt anmelden.",
-		"server_invalid": "Bitte eine Adresse und einen Port (1 - 65535) angeben.",
+		"Win_Login": {"Btn_Login": "Войти", "Btn_Register": "Создать учётную запись", "Chk_Forcelog": "Принудительный вход",
+			"Chk_Memorize": "Запомнить имя", "Lab_Account": "Учётная запись:", "Lab_Password": "Пароль:"},
+		"Win_LoginControl": {"Btn_ServerList": "Сменить сервер", "Btn_LogOut2": "Выйти", "Lab_Server": "Сервер:"},
+		"Win_LoginWait": {"Txt_Message": "Подождите, выполняется вход...", "Btn_Cancel": "Отмена"},
+		"Win_Register": {"Lab_Title": "Создание учётной записи", "Lab_Account": "Имя:", "Lab_Password": "Пароль:",
+			"Lab_Password2": "Повторите пароль:", "Lab_Rules": "Имя: 4–20 символов, пароль: не менее 6",
+			"Btn_Create": "Создать", "Btn_Cancel": "Отмена"},
+		"Win_Server": {"Lab_Title": "Сервер", "Lab_Host": "Адрес:", "Lab_Port": "Порт:",
+			"Chk_Dtls": "Шифрование (DTLS)", "Btn_Ok": "ОК", "Btn_Cancel": "Отмена"},
+		"placeholder": {"DEFAULT_Txt_Account": "Имя учётной записи", "Txt_PassWord": "Пароль"},
+		"password_mismatch": "Пароли не совпадают.",
+		"registered": "Учётная запись %s создана. Теперь войдите.",
+		"server_invalid": "Укажите адрес и порт от 1 до 65535.",
+		"empty_fields": "Введите имя учётной записи и пароль.",
+		"wait": "Подождите, выполняется вход...",
+		"timeout": "Сервер не отвечает. Попробуйте ещё раз.",
 	},
 	"Eng": {
 		"Win_Register": {"Lab_Title": "Create account", "Lab_Account": "Account:", "Lab_Password": "Password:",
@@ -88,6 +92,17 @@ var chars: CharSelect
 var world: WorldScreen
 var _busy = false
 var _wait_cancel_text = ""
+var _local_layer: CanvasLayer
+var _local_button: Button
+var _local_dialog: ConfirmationDialog
+var _local_map_path: LineEdit
+var _local_data_root: LineEdit
+var _local_race: SpinBox
+var _local_gender: SpinBox
+var _local_profession: SpinBox
+var _local_view: SubViewportContainer
+var _local_overlay: Control
+var _local_world
 
 
 static func available(p_settings: Settings) -> bool:
@@ -96,6 +111,7 @@ static func available(p_settings: Settings) -> bool:
 func _ready() -> void:
 	session = get_parent().get_node("Session")
 	settings = Settings.new("client")
+	settings.use_imported_pw_client_if_missing()
 	language = settings.value("language")
 	get_window().title = "Godot-FW"
 	aui = AuiManager.new()
@@ -114,7 +130,7 @@ func _ready() -> void:
 	dlg_server = aui.dialog(ui_dir.path_join("server.xml"))
 	for d in [dlg_login, dlg_control, dlg_wait, dlg_register, dlg_server]:
 		if d == null:
-			push_error("Login: Dialog fehlt (%s)" % ", ".join(aui.warnings))
+			push_error("Вход: не найдено диалоговое окно (%s)" % ", ".join(aui.warnings))
 			return
 		for item_name in HIDDEN.get(d.dlg_name, []):
 			d.show_item(item_name, false)
@@ -134,7 +150,7 @@ func _ready() -> void:
 	dlg_register.command.connect(_on_register_command)
 	dlg_server.command.connect(_on_server_command)
 	chars = CharSelect.new()
-	chars.name = "Figuren"
+	chars.name = "Персонажи"
 	add_child(chars)
 	err = chars.setup(self)
 	if err != "":
@@ -153,16 +169,135 @@ func _ready() -> void:
 		dlg_login.set_text("DEFAULT_Txt_Account", settings.value("account"))
 	_show_server()
 	set_state(State.LOGIN)
+	_add_local_mode_button()
+
+func _add_local_mode_button() -> void:
+	_local_layer = CanvasLayer.new()
+	_local_layer.layer = 20
+	add_child(_local_layer)
+	var button = Button.new()
+	button.text = "Локальная игра без сервера"
+	button.position = Vector2(16, 16)
+	button.pressed.connect(_open_local_mode)
+	_local_button = button
+	_local_layer.add_child(button)
+
+func _open_local_mode() -> void:
+	if _local_dialog != null:
+		_local_dialog.popup_centered()
+		return
+	_local_dialog = ConfirmationDialog.new()
+	_local_dialog.title = "Локальная игра с данными PW"
+	_local_dialog.ok_button_text = "Загрузить карту"
+	_local_dialog.confirmed.connect(_start_local_mode)
+	var fields = GridContainer.new()
+	fields.columns = 2
+	fields.custom_minimum_size.x = 560
+	_local_dialog.add_child(fields)
+	_local_map_path = _local_field(fields, "Импортированная карта:", LineEdit.new()) as LineEdit
+	_local_data_root = _local_field(fields, "Папка клиента PW:", LineEdit.new()) as LineEdit
+	_local_data_root.text = str(settings.value("data_root"))
+	_local_race = _local_field(fields, "Раса (1–6):", SpinBox.new()) as SpinBox
+	_local_race.min_value = 1
+	_local_race.max_value = 6
+	_local_race.value = 1
+	_local_gender = _local_field(fields, "Пол (0/1):", SpinBox.new()) as SpinBox
+	_local_gender.max_value = 1
+	_local_profession = _local_field(fields, "Класс (1–10):", SpinBox.new()) as SpinBox
+	_local_profession.min_value = 1
+	_local_profession.max_value = 10
+	_local_profession.value = 1
+	_local_map_path.text = _first_local_map()
+	_local_layer.add_child(_local_dialog)
+	_local_dialog.popup_centered()
+
+func _local_field(grid: GridContainer, caption: String, control: Control) -> Control:
+	var label = Label.new()
+	label.text = caption
+	grid.add_child(label)
+	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_child(control)
+	return control
+
+func _first_local_map() -> String:
+	var maps_root = str(settings.value("maps_root"))
+	var absolute = ProjectSettings.globalize_path(maps_root) if maps_root.begins_with("res://") else maps_root
+	if not DirAccess.dir_exists_absolute(absolute):
+		return maps_root.path_join("world/world.tscn")
+	for folder in DirAccess.get_directories_at(absolute):
+		var scene = maps_root.path_join(folder).path_join(folder + ".tscn")
+		if ResourceLoader.exists(scene):
+			return scene
+	return maps_root.path_join("world/world.tscn")
+
+func _start_local_mode() -> void:
+	var scene_path = _local_map_path.text.strip_edges()
+	var data_root = _local_data_root.text.strip_edges()
+	var absolute = ProjectSettings.globalize_path(data_root) if data_root.begins_with("res://") else data_root
+	if not DirAccess.dir_exists_absolute(absolute):
+		await _message("Папка игровых данных клиента PW не найдена: " + data_root)
+		return
+	if not ResourceLoader.exists(scene_path):
+		await _message("Импортированная карта не найдена. Сначала импортируйте PW-карту world через панель ECM-GFX-MAP.")
+		return
+	settings.set_value("data_root", data_root)
+	settings.save()
+	for dialog in [dlg_login, dlg_control, dlg_wait, dlg_register, dlg_server]:
+		aui.hide_dialog(dialog)
+	_local_dialog.hide()
+	_local_view = SubViewportContainer.new()
+	_local_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_local_view.stretch = true
+	add_child(_local_view)
+	var viewport = SubViewport.new()
+	viewport.size = Vector2i(1152, 648)
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_local_view.add_child(viewport)
+	_local_world = load("res://game/client/local_map.gd").new()
+	viewport.add_child(_local_world)
+	var err = _local_world.load_world(scene_path, data_root, int(_local_race.value), int(_local_gender.value), int(_local_profession.value))
+	if err != "":
+		_close_local_mode()
+		await _message(err)
+		return
+	_local_overlay = VBoxContainer.new()
+	_local_overlay.position = Vector2(16, 54)
+	_local_layer.add_child(_local_overlay)
+	var hint = Label.new()
+	hint.text = "ЛОКАЛЬНАЯ ИГРА · WASD — движение · мышь — камера · пробел — прыжок · Esc — курсор"
+	hint.add_theme_color_override("font_color", Color.WHITE)
+	_local_overlay.add_child(hint)
+	var back = Button.new()
+	back.text = "Вернуться к выбору режима"
+	back.pressed.connect(_close_local_mode)
+	_local_overlay.add_child(back)
+	_local_button.hide()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _close_local_mode() -> void:
+	if _local_view == null:
+		return
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_local_view.queue_free()
+	if _local_overlay != null:
+		_local_overlay.queue_free()
+	_local_view = null
+	_local_overlay = null
+	_local_world = null
+	_local_button.show()
+	set_state(State.LOGIN)
 
 func set_state(s: int) -> void:
 	var was = state
 	state = s
+	if _local_button != null and _local_view == null:
+		_local_button.visible = s == State.LOGIN
 	var shown = {State.LOGIN: [dlg_control, dlg_login], State.WAITING: [dlg_wait], State.SELECT_CHAR: [], State.IN_WORLD: []}[s]
 	for d in [dlg_login, dlg_control, dlg_wait, dlg_register, dlg_server]:
 		if not d in shown:
 			aui.hide_dialog(d)
 	if s == State.WAITING:
-		dlg_wait.set_text("Txt_Message", aui.text(STF_WAIT).strip_edges())
+		dlg_wait.set_text("Txt_Message", _texts()["wait"])
 		dlg_wait.set_text("Btn_Cancel", _wait_cancel_text)
 	if was == State.SELECT_CHAR and s != State.SELECT_CHAR:
 		chars.close()
@@ -208,7 +343,7 @@ func login() -> void:
 	var acc = dlg_login.get_text("DEFAULT_Txt_Account").strip_edges()
 	var pw = dlg_login.get_text("Txt_PassWord")
 	if acc == "" or pw == "":
-		await _message(aui.text(STF_EMPTY_FIELDS))
+		await _message(_texts()["empty_fields"])
 		return
 	dlg_login.set_text("Txt_PassWord", "")
 	_busy = true
@@ -287,7 +422,7 @@ func register() -> void:
 	var acc = dlg_register.get_text("DEFAULT_Edt_Account").strip_edges()
 	var pw = dlg_register.get_text("Edt_Password")
 	if acc == "" or pw == "":
-		await _message(aui.text(STF_EMPTY_FIELDS))
+		await _message(_texts()["empty_fields"])
 		return
 	if pw != dlg_register.get_text("Edt_Password2"):
 		await _message(_texts()["password_mismatch"])
@@ -368,8 +503,8 @@ func _message(text: String) -> void:
 	await message(text)
 
 func _error_text(code: int) -> String:
-	if code == Proto.Code.TIMEOUT and aui.text(STF_TIMEOUT) != "":
-		return aui.text(STF_TIMEOUT)
+	if code == Proto.Code.TIMEOUT:
+		return _texts()["timeout"]
 	return Proto.text(code, language)
 
 func _texts() -> Dictionary:

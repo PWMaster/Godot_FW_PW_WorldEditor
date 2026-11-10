@@ -61,7 +61,7 @@ const HIDE_ALPHA = 0.05 # A3DGFXEx::Render
 @export var Alpha: float = 1.0
 ## Kamerawackeln auch mit der Editor-Kamera zeigen
 @export var Shake_In_Editor: bool = false
-@export_tool_button("GFX neu starten", "Reload") var btn_restart = restart
+@export_tool_button("Перезапустить GFX", "Reload") var btn_restart = restart
 
 var _t = 0.0
 var _cfg = {}

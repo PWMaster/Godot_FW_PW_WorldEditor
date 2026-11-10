@@ -34,6 +34,8 @@ static func reset() -> void:
 	_lock.unlock()
 
 static func file_exists(path: String, decoder) -> bool:
+	if not _inside_root(path, decoder.root):
+		return false
 	if FileAccess.file_exists(path):
 		return true
 	_lock.lock()
@@ -43,6 +45,8 @@ static func file_exists(path: String, decoder) -> bool:
 	return ok
 
 static func dir_exists(path: String, decoder) -> bool:
+	if not _inside_root(path, decoder.root):
+		return false
 	if DirAccess.dir_exists_absolute(path):
 		return true
 	_lock.lock()
@@ -52,6 +56,8 @@ static func dir_exists(path: String, decoder) -> bool:
 
 # Inhalt einer Datei (echt oder aus dem Paket), leer wenn sie fehlt
 static func get_bytes(path: String, decoder) -> PackedByteArray:
+	if not _inside_root(path, decoder.root):
+		return PackedByteArray()
 	if FileAccess.file_exists(path):
 		return FileAccess.get_file_as_bytes(path)
 	_lock.lock()
@@ -62,6 +68,8 @@ static func get_bytes(path: String, decoder) -> PackedByteArray:
 
 # Größe einer Datei, -1 wenn sie fehlt
 static func file_size(path: String, decoder) -> int:
+	if not _inside_root(path, decoder.root):
+		return -1
 	if FileAccess.file_exists(path):
 		var f = FileAccess.open(path, FileAccess.READ)
 		return f.get_length() if f != null else -1
@@ -75,6 +83,8 @@ static func file_size(path: String, decoder) -> int:
 # der Inhalt eines Paketordners
 static func list(dir: String, decoder) -> Dictionary:
 	dir = dir.trim_suffix("/") if not dir.ends_with("://") else dir
+	if not _inside_root(dir, decoder.root):
+		return {}
 	_lock.lock()
 	var out = {}
 	var real = _real_list(dir)
@@ -107,27 +117,51 @@ static func packages() -> Array:
 # ====================================================
 # Datei -> [Paket, Pfad im Paket] oder []
 static func _locate(path: String, decoder) -> Array:
+	if not _inside_root(path, decoder.root):
+		return []
+	var root = _normalize_path(decoder.root)
 	var dir = path.get_base_dir()
 	var rel = path.get_file()
 	while dir != "" and not dir.ends_with("://") and dir != "/":
+		if _normalize_path(dir) == root:
+			break
 		var pck = _pack_for(dir, decoder)
 		if pck != null:
 			return [pck, rel]
 		rel = dir.get_file() + "/" + rel
-		dir = dir.get_base_dir()
+		var parent = dir.get_base_dir()
+		if parent == dir or not _inside_root(parent, decoder.root):
+			break
+		dir = parent
 	return []
 
 # Ordner -> [Paket, Ordner im Paket] oder [] (auch wenn es den Ordner im Paket nicht gibt: [])
 static func _locate_dir(path: String, decoder) -> Array:
+	if not _inside_root(path, decoder.root):
+		return []
+	var root = _normalize_path(decoder.root)
 	var dir = path
 	var rel = ""
 	while dir != "" and not dir.ends_with("://") and dir != "/":
+		if _normalize_path(dir) == root:
+			break
 		var pck = _pack_for(dir, decoder)
 		if pck != null:
 			return [pck, rel] if pck.has_dir(rel) else []
 		rel = dir.get_file() if rel == "" else dir.get_file() + "/" + rel
-		dir = dir.get_base_dir()
+		var parent = dir.get_base_dir()
+		if parent == dir or not _inside_root(parent, decoder.root):
+			break
+		dir = parent
 	return []
+
+static func _inside_root(path: String, root: String) -> bool:
+	var candidate = _normalize_path(path)
+	var boundary = _normalize_path(root)
+	return candidate == boundary or candidate.begins_with(boundary + "/")
+
+static func _normalize_path(path: String) -> String:
+	return path.replace("\\", "/").trim_suffix("/").to_lower()
 
 # Paket, das den Ordner dir abbildet (<Eltern>/<Name>.pck), sonst null
 static func _pack_for(dir: String, decoder):

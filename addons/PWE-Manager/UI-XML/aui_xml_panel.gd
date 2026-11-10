@@ -15,9 +15,9 @@ const UIBuilder = preload("angelica_ui_builder.gd")
 const DEFAULT_ROOT = "res://Stock-PWE-Client"
 const META_SECTION = "aui_xml_panel"
 const ROOT_SECTION = "ecm_gfx_panel" # Spieldaten-Ordner wie in der Leiste ECM-GFX-MAP
-const LANGUAGES = [["Deutsch", "Deu"], ["Englisch", "Eng"], ["Französisch", "Franz"]]
-const LIST_ALL = "Alle"
-const LIST_NONE = "Ohne Liste"
+const LANGUAGES = [["Немецкие данные (Deu)", "Deu"], ["Английские данные (Eng)", "Eng"], ["Французские данные (Franz)", "Franz"]]
+const LIST_ALL = "Все"
+const LIST_NONE = "Без списка"
 
 var _root = DEFAULT_ROOT
 var _ui = null # angelica_ui.gd der gewählten Sprache
@@ -30,6 +30,8 @@ var _search: LineEdit
 var _status: Label
 var _tree: Tree
 var _search_timer: Timer
+var _load_btn: Button
+var _selected_language = "Deu"
 var _file_icon: Texture2D = null
 var _dim_color = Color(0.6, 0.6, 0.6)
 
@@ -47,26 +49,31 @@ func _init() -> void:
 	box.add_child(bar)
 
 	var lang_label = Label.new()
-	lang_label.text = "Sprache:"
+	lang_label.text = "Язык данных:"
 	bar.add_child(lang_label)
 	_language = OptionButton.new()
 	for i in LANGUAGES.size():
 		_language.add_item(LANGUAGES[i][0], i)
-	_language.tooltip_text = "Sprachordner der Spieldaten (Deu, Eng, Franz): Oberfläche und Namen der Spawns"
+	_language.tooltip_text = "Выберите папку языка игровых данных: интерфейс и названия точек появления"
 	_language.item_selected.connect(_on_language_selected)
 	bar.add_child(_language)
+	_load_btn = Button.new()
+	_load_btn.text = "Загрузить список"
+	_load_btn.tooltip_text = "Прочитать XML-файлы выбранного языка из каталога клиента"
+	_load_btn.pressed.connect(func(): set_language(_selected_language))
+	bar.add_child(_load_btn)
 
 	_list_filter = OptionButton.new()
 	_list_filter.add_item(LIST_ALL)
 	for lay in UI.LAYOUTS:
 		_list_filter.add_item(lay)
 	_list_filter.add_item(LIST_NONE)
-	_list_filter.tooltip_text = "Nur Dialoge einer Dialog-Liste (.dcf): 1gameui / 2gameui = Oberflächen-Stile 1 / 2"
+	_list_filter.tooltip_text = "Показать диалоги выбранного списка (.dcf): 1gameui / 2gameui — стили интерфейса 1 / 2"
 	_list_filter.item_selected.connect(func(_i): _rebuild_tree())
 	bar.add_child(_list_filter)
 
 	_search = LineEdit.new()
-	_search.placeholder_text = "XML suchen (Dateiname) ..."
+	_search.placeholder_text = "Поиск XML по имени файла..."
 	_search.clear_button_enabled = true
 	_search.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_search.text_changed.connect(func(_t): _search_timer.start())
@@ -107,12 +114,19 @@ func _ready() -> void:
 		if LANGUAGES[i][1] == lang:
 			index = i
 	_language.select(index)
-	set_language(LANGUAGES[index][1])
+	_selected_language = LANGUAGES[index][1]
+	_tree.clear()
+	var root = _tree.create_item()
+	var hint = _tree.create_item(root)
+	hint.set_text(0, "Нажмите «Загрузить список», чтобы прочитать игровые XML-файлы.")
+	_set_status("Загрузка отложена до нажатия кнопки")
 
 func _on_language_selected(index: int) -> void:
 	var lang = LANGUAGES[index][1]
+	_selected_language = lang
 	EditorInterface.get_editor_settings().set_project_metadata(META_SECTION, "language", lang)
-	set_language(lang)
+	_files = PackedStringArray()
+	_rebuild_tree()
 
 # Sprache wählen: Ordner lesen, Liste neu aufbauen
 func set_language(lang: String) -> void:
@@ -131,7 +145,7 @@ func set_language(lang: String) -> void:
 
 # Der Sprachordner selbst (ohne Rückfall auf resources/interfaces)
 func _language_present(lang: String) -> bool:
-	return _ui.files.resolve(lang + "/interfaces") != "" or _ui.files.resolve("resources/" + lang + "/interfaces") != ""
+	return _ui.files.resolve(lang + "/interfaces") != "" or _ui.files.resolve("resources/" + lang + "/interfaces") != "" or _ui.files.resolve("interfaces1") != ""
 
 func current_language() -> String:
 	return LANGUAGES[_language.selected][1]
@@ -145,9 +159,9 @@ func _rebuild_tree() -> void:
 	var root_item = _tree.create_item()
 	var lang = current_language()
 	if _files.is_empty():
-		_set_status("Ordner " + lang + "/interfaces fehlt")
+		_set_status("Не найдена папка " + lang + "/interfaces")
 		var hint = _tree.create_item(root_item)
-		hint.set_text(0, "Den Sprachordner \"%s\" (mit interfaces, surfaces) unter %s ablegen." % [lang, _root])
+		hint.set_text(0, "Не найдены интерфейсные файлы языка %s в папке %s." % [lang, _root])
 		return
 	var query = _search.text.strip_edges().to_lower()
 	var wanted = _list_filter.get_item_text(_list_filter.selected)
@@ -188,19 +202,19 @@ func open_selected() -> void:
 # Dialog bauen, speichern und als Tab in der 2D-Ansicht öffnen (offen: neu laden)
 func open_dialog(path: String) -> Dictionary:
 	if _busy:
-		return {"error": "beschäftigt"}
+		return {"error": "Загрузка уже выполняется"}
 	_busy = true
 	var fs = EditorInterface.get_resource_filesystem()
 	if fs.is_scanning():
-		_set_status("Warte auf den Datei-Scan des Editors ...")
+		_set_status("Ожидание сканирования файлов редактором...")
 		while fs.is_scanning():
 			await get_tree().process_frame
-	_set_status(path.get_file() + " wird gebaut ...")
+	_set_status("Создаётся " + path.get_file() + "...")
 	await get_tree().process_frame
 	var builder = UIBuilder.new(_ui)
 	var res = builder.import_dialog(path)
 	if res.has("error"):
-		_set_status("Fehler: " + res["error"])
+		_set_status("Ошибка: " + res["error"])
 		printerr("XML ", path, ": ", res["error"])
 		_busy = false
 		return res
@@ -216,7 +230,7 @@ func open_dialog(path: String) -> Dictionary:
 	EditorInterface.open_scene_from_path(res["scene"])
 	EditorInterface.set_main_screen_editor("2D")
 	var n = res["warnings"].size()
-	_set_status("Geöffnet: " + res["scene"] + ((" (%d Hinweise in der Ausgabe)" % n) if n > 0 else ""))
+	_set_status("Открыто: " + res["scene"] + ((" (предупреждений: %d, см. вывод)" % n) if n > 0 else ""))
 	_busy = false
 	return res
 

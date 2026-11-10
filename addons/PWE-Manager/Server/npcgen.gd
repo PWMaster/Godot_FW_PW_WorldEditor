@@ -34,7 +34,7 @@ var _files = null # angelica_files.gd für GBK-Namen (optional)
 # Datei -> {version, areas, res_areas, dyn_objects, controllers, fly_areas} oder {"error"}
 func read(path: String, files = null) -> Dictionary:
 	if not FileAccess.file_exists(path):
-		return {"error": path + " nicht gefunden"}
+		return {"error": "Файл не найден: " + path}
 	return parse(FileAccess.get_file_as_bytes(path), files)
 
 func parse(bytes: PackedByteArray, files = null) -> Dictionary:
@@ -45,7 +45,7 @@ func parse(bytes: PackedByteArray, files = null) -> Dictionary:
 		return {"error": "zu kurz"}
 	var version = _u32()
 	if version > MAX_VERSION:
-		return {"error": "Version %d unbekannt" % version}
+		return {"error": "Неизвестная версия %d" % version}
 	var counts = _header(version)
 	if version >= 20:
 		_p += 8 # nCopy, nFlyCopy
@@ -80,7 +80,7 @@ func parse(bytes: PackedByteArray, files = null) -> Dictionary:
 	_p += counts[5] * 31 + counts[6] * 16 # Mineral-Würfel / -Kugeln (nur v16)
 	out["fly_areas"] = counts[4]
 	if _p != _b.size():
-		out["warning"] = "%d Bytes übrig" % (_b.size() - _p)
+		out["warning"] = "Лишние данные: %d байт" % (_b.size() - _p)
 	_b = PackedByteArray()
 	return out
 
@@ -229,7 +229,7 @@ func _fits(n: int) -> bool:
 	return _p + n <= _b.size()
 
 func _broken(out: Dictionary, what: String) -> Dictionary:
-	out["error"] = "Datei endet vorzeitig (%s)" % what
+	out["error"] = "Файл неожиданно закончился при чтении: %s" % what
 	_b = PackedByteArray()
 	return out
 

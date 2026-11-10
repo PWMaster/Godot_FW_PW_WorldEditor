@@ -89,7 +89,12 @@ func _language_dir(sub: String) -> String:
 			var p = files.resolve(base + "/" + sub)
 			if p != "":
 				return p
-	return files.resolve("resources/" + sub)
+	var common = files.resolve("resources/" + sub)
+	if common != "":
+		return common
+	if sub == "interfaces":
+		return files.resolve("interfaces1")
+	return files.resolve(sub)
 
 
 # ====================================================

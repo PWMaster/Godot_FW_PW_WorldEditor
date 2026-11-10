@@ -41,7 +41,7 @@ const Skills = preload("skills.gd")
 const SkillCast = preload("skill_cast.gd")
 const Buffs = preload("buffs.gd")
 const PLUGIN_SERVER = "res://addons/PWE-Manager/Server/"
-const SERVER_NAME = "Godot-FW-Server"
+const SERVER_NAME = "Встроенный сервер FW"
 const POLL_SECONDS = 0.5
 const MAX_REQUESTS_PER_SECOND = 60
 const LOAD_WINDOW = 10.0 # s je Messung der Last
@@ -65,6 +65,7 @@ var dir = "user://server"
 var log_file = ""
 var status_file = ""
 var stop_file = ""
+var parent_heartbeat_file = ""
 var peers = {} # Peer -> {address, at, hello, account_id, account, since, window, requests, busy}
 var online = {} # Konto-ID -> Peer
 var world = {} # Map -> Zusammenfassung der Spawns (Anzahlen)
@@ -77,21 +78,29 @@ var _frame_us = {"last": 0, "max": 0} # Abstand der Bilder im laufenden Messfens
 var _load = {} # letztes Messfenster: {in_world, tick_avg_ms, tick_max_ms, frame_max_ms, sent_kbps, recv_kbps}
 var _load_at = 0
 var _load_logged = 0
-var _log: FileAccess
 var _started = ""
 var _status_dirty = true
+var _status_at = 0
 var _stopping = false
+var _server_name = SERVER_NAME
+var _parent_pid = 0
 
 
 func _ready() -> void:
 	settings = Settings.new("server")
+	if str(Settings.user_args().get("data-profile", "")) == "PW155":
+		_server_name = "Встроенный сервер PWE (профиль PW 155)"
+	_parent_pid = int(Settings.user_args().get("parent-pid", "0"))
 	dir = str(settings.value("dir")).trim_suffix("/")
 	log_file = dir + "/server.log"
 	status_file = dir + "/status.json"
 	stop_file = dir + "/stop"
+	parent_heartbeat_file = dir + "/editor_heartbeat"
 	DirAccess.make_dir_recursive_absolute(dir)
 	DirAccess.remove_absolute(stop_file)
-	_log = FileAccess.open(log_file, FileAccess.WRITE)
+	var initial_log = FileAccess.open(log_file, FileAccess.WRITE)
+	if initial_log != null:
+		initial_log.close()
 	_started = Time.get_datetime_string_from_system(false, true)
 	port = settings.value("port")
 	dtls = settings.value("dtls")
@@ -104,20 +113,20 @@ func _ready() -> void:
 		"equip": _equip, "unequip": _unequip, "move_item": _move_item, "gather": _gather, "gather_cancel": _gather_cancel,
 		"attack": _attack, "attack_stop": _attack_stop, "revive": _revive, "skill_seen": _skill_seen, "shortcut": _shortcut,
 		"skill_cast": _skill_cast, "skill_cancel": _skill_cancel}
-	log_line("%s startet (Port %d, Protokoll %d, Prozess %d)" % [SERVER_NAME, port, Proto.VERSION, OS.get_process_id()])
+	log_line("%s запущен (порт %d, протокол %d, процесс %d)" % [_server_name, port, Proto.VERSION, OS.get_process_id()])
 	var err = _open_database()
 	if err == "":
 		game_world = World.new(db, net, log_line)
 		game_world.badwords = characters.badwords
 		stats = Stats.new()
 		if not stats.loaded():
-			log_line("Klassenwerte fehlen (%sclass_templates.json): Höchstwerte = Werte der Figur" % PLUGIN_SERVER)
+			log_line("Нет шаблонов классов (%sclass_templates.json): максимальные параметры берутся из шаблона персонажа" % PLUGIN_SERVER)
 		inventory = Inventory.new(db, net, log_line, stats)
 		var ierr = inventory.load_templates()
 		if ierr != "":
-			log_line("Gegenstände: %s - keine Ausrüstung, keine Sammelpunkte" % ierr)
+			log_line("Предметы: %s — экипировка и точки сбора недоступны" % ierr)
 		else:
-			log_line("Gegenstände: %d Vorlagen, %d Sammelpunkt-Vorlagen" % [inventory.items.size(), inventory.mines.size()])
+			log_line("Предметы: шаблонов %d, точек сбора %d" % [inventory.items.size(), inventory.mines.size()])
 		game_world.inventory = inventory
 		inventory.on_equip_changed = game_world.equip_changed
 		var quests = Quests.new(db, net, log_line, stats)
@@ -141,26 +150,26 @@ func _ready() -> void:
 		game_world.buffs = buffs
 		var berr = buffs.load_templates()
 		if berr != "":
-			log_line("Statuseffekte: %s - keine Effekte" % berr)
+			log_line("Эффекты состояний: %s — эффекты отключены" % berr)
 		else:
-			log_line("Statuseffekte: %d Vorlagen" % buffs.states.size())
+			log_line("Эффекты состояний: загружено шаблонов %d" % buffs.states.size())
 		var serr = casting.load_templates()
 		if serr != "":
-			log_line("Fertigkeiten: %s - Einsetzen nicht möglich" % serr)
+			log_line("Навыки: %s — применение недоступно" % serr)
 		else:
-			log_line("Fertigkeiten: %d Vorlagen" % casting.templates.size())
+			log_line("Навыки: загружено шаблонов %d" % casting.templates.size())
 		game_world.templates = characters.templates
 		var qerr = quests.load_templates()
 		if qerr != "":
-			log_line("Quests: %s - keine Quests" % qerr)
+			log_line("Квесты: %s — квесты отключены" % qerr)
 		else:
-			log_line("Quests: %d (%d automatisch vergebbar), %d NPCs vergeben, %d nehmen ab" % [quests.tasks.size(),
+			log_line("Квесты: всего %d (автовыдача: %d; выдающих NPC: %d; принимающих NPC: %d)" % [quests.tasks.size(),
 				quests.auto_list.size(), quests.npc_out.size(), quests.npc_in.size()])
 			game_world.quests = quests
 		_load_world(settings.value("maps"))
 		err = _listen()
 	if err != "":
-		log_line("FEHLER: " + err)
+		log_line("ОШИБКА: " + err)
 		_write_status(false)
 		get_tree().quit(1)
 		return
@@ -176,30 +185,44 @@ func _ready() -> void:
 	add_child(_ticker)
 	_load_at = Time.get_ticks_msec()
 	_load_logged = _load_at
-	log_line("Bereit, warte auf Spieler ...")
+	log_line("Сервер готов, ожидание игроков...")
 	_write_status(true)
 
 func log_line(msg: String) -> void:
 	var line = "[%s] %s" % [Time.get_time_string_from_system(), msg]
 	print(line)
-	if _log != null:
-		_log.store_line(line)
-		_log.flush()
+	var file = FileAccess.open(log_file, FileAccess.READ_WRITE)
+	if file != null:
+		file.seek_end()
+		file.store_line(line)
+		file.flush()
+		file.close()
 
 func _open_database() -> String:
 	db = Db.new()
 	var path = str(settings.value("database"))
 	var err = db.open(path if path != "" else dir + "/game.db")
 	if err != "":
-		return "Datenbank: " + err
+		return "База данных: " + err
 	err = Schema.migrate(db)
 	if err != "":
-		return "Datenbank: " + err
+		return "База данных: " + err
 	accounts = Accounts.new(db)
+	var admin_rows = db.query("SELECT id FROM accounts WHERE name = ?", ["admin"])
+	if admin_rows == null:
+		return "Не удалось проверить учётную запись администратора: " + db.last_error
+	var admin_hash = accounts.hash_password("admin")
+	if admin_rows.is_empty():
+		if not db.run("INSERT INTO accounts (name, pw_hash, created) VALUES (?, ?, ?)", ["admin", admin_hash, Accounts.now()]):
+			return "Не удалось создать учётную запись admin: " + db.last_error
+	else:
+		if not db.run("UPDATE accounts SET pw_hash = ? WHERE name = ?", [admin_hash, "admin"]):
+			return "Не удалось обновить пароль учётной записи admin: " + db.last_error
+	log_line("Учётные данные первого входа готовы: admin / admin")
 	characters = Characters.new(db)
 	if characters.templates.is_empty():
-		return "Startvorlagen fehlen (%sstart_roles.json)" % Characters.PLUGIN_SERVER
-	log_line("Datenbank %s (Version %d, %d Konten, %d Figuren), %d Startvorlagen, %d Wörter im Namensfilter" % [db.path,
+		log_line("Нет шаблонов стартовых персонажей (%sstart_roles.json): сервер запущен, создание персонажей будет недоступно" % Characters.PLUGIN_SERVER)
+	log_line("База данных %s (версия %d, аккаунтов %d, персонажей %d), стартовых шаблонов %d, слов в фильтре имён %d" % [db.path,
 		Schema.version(), int(db.scalar("SELECT count(*) FROM accounts")), int(db.scalar("SELECT count(*) FROM characters")),
 		characters.templates.size(), characters.badwords.size()])
 	return ""
@@ -209,15 +232,15 @@ func _listen() -> String:
 	peer.set_bind_ip(settings.value("bind"))
 	var err = peer.create_server(port, settings.value("max_clients"))
 	if err != OK:
-		return "Port %d nicht verfügbar (%s)" % [port, error_string(err)]
+		return "Порт %d недоступен (%s)" % [port, error_string(err)]
 	if dtls:
 		var tls = _tls_options()
 		if tls == null:
-			return "DTLS-Schlüssel nicht lesbar oder erzeugbar (%s/dtls.key)" % dir
+			return "Не удалось прочитать или создать ключ DTLS (%s/dtls.key)" % dir
 		err = peer.host.dtls_server_setup(tls)
 		if err != OK:
-			return "DTLS nicht einrichtbar (%s)" % error_string(err)
-		log_line("Verbindungen verschlüsselt (DTLS, Zertifikat %s)" % ProjectSettings.globalize_path(dir + "/dtls.crt"))
+			return "Не удалось настроить DTLS (%s)" % error_string(err)
+		log_line("Соединения шифруются через DTLS (сертификат %s)" % ProjectSettings.globalize_path(dir + "/dtls.crt"))
 	var mp := multiplayer as SceneMultiplayer
 	mp.server_relay = false
 	mp.multiplayer_peer = peer
@@ -239,7 +262,7 @@ func _tls_options() -> TLSOptions:
 		cert = crypto.generate_self_signed_certificate(key, "CN=godot-fw-server,O=Godot-FW,C=DE")
 		if key.save(key_file) != OK or cert.save(cert_file) != OK:
 			return null
-		log_line("DTLS-Schlüssel und Zertifikat erzeugt")
+		log_line("Созданы ключ и сертификат DTLS")
 	return TLSOptions.server(key, cert)
 
 
@@ -248,7 +271,7 @@ func _tls_options() -> TLSOptions:
 # ====================================================
 func _load_world(only: String) -> void:
 	if not ResourceLoader.exists(PLUGIN_SERVER + "spawn_builder.gd"):
-		log_line("Spawns: Plugin PWE-Manager fehlt, Welt leer")
+		log_line("Спавны: отсутствует плагин PWE-Manager, мир пуст")
 		return
 	var spawn_builder = load(PLUGIN_SERVER + "spawn_builder.gd")
 	var npcgen = load(PLUGIN_SERVER + "npcgen.gd")
@@ -267,7 +290,7 @@ func _load_world(only: String) -> void:
 		var main: Dictionary = sources[map_name][0]
 		var data = npcgen.new().read(spawn_builder.npcgen_path(main["folder"]))
 		if data.has("error"):
-			log_line("Map %s: %s" % [map_name, data["error"]])
+			log_line("Карта %s: %s" % [map_name, data["error"]])
 			continue
 		var terrain = null
 		var dir = spawn_builder.server_dir().path_join("data").path_join(main["folder"])
@@ -275,7 +298,7 @@ func _load_world(only: String) -> void:
 			terrain = heightmap.new()
 			var err = terrain.load_dir(dir)
 			if err != "":
-				log_line("Map %s: Höhen %s" % [map_name, err])
+				log_line("Карта %s: ошибка высот %s" % [map_name, err])
 				terrain = null
 			else:
 				heights.append(map_name)
@@ -294,16 +317,16 @@ func _load_world(only: String) -> void:
 		world[map_name] = s
 		for k in totals:
 			totals[k] += s.get(k, 0)
-	log_line("Welt geladen in %.1f s: %d Maps, %d Monster, %d NPCs, %d Sammelpunkte (%d erzeugt); %d Vorlagen unbekannt; Höhen für %s" % [
+	log_line("Мир загружен за %.1f с: карт — %d, монстров — %d, НПС — %d, точек сбора — %d (создано %d); неизвестных шаблонов — %d; высоты: %s" % [
 		(Time.get_ticks_msec() - t0) / 1000.0, world.size(), totals["monsters"], totals["npcs"], totals["res"], totals["mines"],
-		totals["unknown"], ", ".join(heights) if not heights.is_empty() else "keine Map"])
+		totals["unknown"], ", ".join(heights) if not heights.is_empty() else "нет карт"])
 
 # Werte der Monster- / NPC-Vorlagen (Plugin Server/npc_templates.json), {} wenn sie fehlen
 func _templates() -> Dictionary:
-	var path = PLUGIN_SERVER + "npc_templates.json"
+	var path = Settings.server_data_path("npc_templates.json")
 	var d = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
 	if not d is Dictionary or not d.has("monsters") or not d.has("npcs"):
-		log_line("Spawns: %s fehlt oder ist unlesbar, keine NPCs und Monster" % path)
+		log_line("Спавны: файл %s отсутствует или не читается; NPC и монстры не созданы" % path)
 		return {}
 	return d
 
@@ -333,7 +356,7 @@ func _on_peer_connected(id: int) -> void:
 	var address = pp.get_remote_address() if pp != null else "?"
 	peers[id] = {"address": address, "at": Time.get_ticks_msec(), "hello": false, "account_id": 0, "account": "",
 		"since": "", "window": 0, "requests": 0, "char_id": 0, "char_info": {}, "busy": false}
-	log_line("Verbindung von %s (Peer %d)" % [address, id])
+	log_line("Подключение от %s (ID %d)" % [address, id])
 
 func _on_peer_disconnected(id: int) -> void:
 	var p = peers.get(id)
@@ -344,10 +367,10 @@ func _on_peer_disconnected(id: int) -> void:
 	if p["account_id"] != 0:
 		if online.get(p["account_id"]) == id:
 			online.erase(p["account_id"])
-		log_line("Abgemeldet: %s (Peer %d, Verbindung getrennt) - %d online" % [p["account"], id, online.size()])
+		log_line("Выход: %s (ID %d, соединение закрыто); игроков онлайн: %d" % [p["account"], id, online.size()])
 		_status_dirty = true
 	else:
-		log_line("Verbindung getrennt (Peer %d)" % id)
+		log_line("Соединение закрыто (ID %d)" % id)
 
 # Meldung senden und die Verbindung trennen, sobald alles Ausstehende gesendet ist
 func kick(id: int, code: int) -> void:
@@ -359,7 +382,7 @@ func kick(id: int, code: int) -> void:
 	if p["account_id"] != 0 and online.get(p["account_id"]) == id:
 		online.erase(p["account_id"])
 		_status_dirty = true
-	log_line("Getrennt: Peer %d %s(%s)" % [id, (p["account"] + " ") if p["account"] != "" else "", Proto.text(code)])
+	log_line("Отключено: подключение %d %s(%s)" % [id, (p["account"] + " ") if p["account"] != "" else "", Proto.text(code)])
 	p["account_id"] = 0
 	p["kicked"] = true # eine noch laufende Anmeldung (Hash) meldet ihn nicht mehr an
 	var pp = peer.get_peer(id)
@@ -402,11 +425,11 @@ func _hello(id: int, p: Dictionary, args: Dictionary) -> Array:
 	if not version is int:
 		return [Proto.Code.BAD_REQUEST, {}]
 	if version != Proto.VERSION:
-		log_line("Peer %d: Protokoll %d statt %d" % [id, version, Proto.VERSION])
+		log_line("Узел %d: версия протокола %d, ожидалась %d" % [id, version, Proto.VERSION])
 		_kick_after_reply.call_deferred(id, Proto.Code.VERSION_MISMATCH)
 		return [Proto.Code.VERSION_MISMATCH, {"version": Proto.VERSION}]
 	p["hello"] = true
-	return [Proto.Code.OK, {"server": SERVER_NAME, "version": Proto.VERSION, "started": _started}]
+	return [Proto.Code.OK, {"server": _server_name, "version": Proto.VERSION, "started": _started}]
 
 func _ping(_id: int, _p: Dictionary, _args: Dictionary) -> Array:
 	return [Proto.Code.OK, {"time": Time.get_unix_time_from_system()}]
@@ -465,20 +488,20 @@ func _job_done(j: Dictionary) -> void:
 # Ergebnis von Anlegen / Anmelden ins Log und (Anmelden) die Sitzung eintragen
 func _job_result(id: int, p: Dictionary, what: String, job: Dictionary, r: Array) -> Array:
 	if r[0] == Proto.Code.SERVER_ERROR:
-		log_line("FEHLER Datenbank: " + db.last_error)
+		log_line("ОШИБКА базы данных: " + db.last_error)
 	if what == "register":
 		if r[0] == Proto.Code.OK:
-			log_line("Konto angelegt: %s (Peer %d, %s)" % [r[1]["account"], id, p["address"]])
+			log_line("Создана учётная запись: %s (подключение %d, %s)" % [r[1]["account"], id, p["address"]])
 		return r
 	if r[0] != Proto.Code.OK:
-		log_line("Anmeldung abgewiesen: %s (Peer %d, %s): %s" % [_printable(job["name"]), id, p["address"], Proto.text(r[0])])
+		log_line("Вход отклонён: %s (подключение %d, %s): %s" % [_printable(job["name"]), id, p["address"], Proto.text(r[0])])
 		return r
 	if p["account_id"] != 0:
 		return [Proto.Code.ALREADY_LOGGED_IN, {}]
 	var account_id: int = r[1]["account_id"]
 	if online.has(account_id): # nur einmal gleichzeitig: erzwungen fliegt die ältere Sitzung
 		if not job["force"]:
-			log_line("Anmeldung abgewiesen: %s (Peer %d): schon angemeldet" % [r[1]["account"], id])
+			log_line("Вход отклонён: %s (подключение %d): учётная запись уже используется" % [r[1]["account"], id])
 			return [Proto.Code.ACCOUNT_ONLINE, {}]
 		kick(online[account_id], Proto.Code.LOGGED_IN_ELSEWHERE)
 	p["account_id"] = account_id
@@ -486,7 +509,7 @@ func _job_result(id: int, p: Dictionary, what: String, job: Dictionary, r: Array
 	p["since"] = Time.get_time_string_from_system()
 	online[account_id] = id
 	_status_dirty = true
-	log_line("Angemeldet: %s (Peer %d, %s) - %d online" % [p["account"], id, p["address"], online.size()])
+	log_line("Вход выполнен: %s (подключение %d, %s); игроков онлайн: %d" % [p["account"], id, p["address"], online.size()])
 	return r
 
 func _logout(id: int, p: Dictionary, _args: Dictionary) -> Array:
@@ -494,7 +517,7 @@ func _logout(id: int, p: Dictionary, _args: Dictionary) -> Array:
 		online.erase(p["account_id"])
 	game_world.leave(id)
 	p["char_info"] = {}
-	log_line("Abgemeldet: %s (Peer %d) - %d online" % [p["account"], id, online.size()])
+	log_line("Выход: %s (подключение %d); игроков онлайн: %d" % [p["account"], id, online.size()])
 	p["account_id"] = 0
 	p["account"] = ""
 	p["char_id"] = 0
@@ -512,13 +535,13 @@ func _char_create(id: int, p: Dictionary, args: Dictionary) -> Array:
 	var r = _db_result(characters.create(p["account_id"], args))
 	if r[0] == Proto.Code.OK:
 		var c = r[1]["char"]
-		log_line("Figur angelegt: %s (Konto %s, Rasse %d, Klasse %d, Peer %d)" % [c["name"], p["account"], c["race"], c["class"], id])
+		log_line("Создан персонаж: %s (учётная запись %s, раса %d, класс %d, подключение %d)" % [c["name"], p["account"], c["race"], c["class"], id])
 	return r
 
 func _char_delete(id: int, p: Dictionary, args: Dictionary) -> Array:
 	var r = _db_result(characters.delete(p["account_id"], args))
 	if r[0] == Proto.Code.OK:
-		log_line("Figur gelöscht: Nr. %d (Konto %s, Peer %d)" % [args["id"], p["account"], id])
+		log_line("Удалён персонаж №%d (учётная запись %s, подключение %d)" % [args["id"], p["account"], id])
 	return r
 
 func _char_enter(id: int, p: Dictionary, args: Dictionary) -> Array:
@@ -537,7 +560,7 @@ func _char_enter(id: int, p: Dictionary, args: Dictionary) -> Array:
 		r[1]["exp_next"] = stats.exp_next(c["level"])
 		p["char_id"] = r[1]["char"]["id"]
 		p["char_info"] = r[1]
-		log_line("Figur gewählt: %s (Konto %s, Map %s, Peer %d)" % [r[1]["char"]["name"], p["account"], r[1]["map"], id])
+		log_line("Выбран персонаж: %s (учётная запись %s, карта %s, подключение %d)" % [r[1]["char"]["name"], p["account"], r[1]["map"], id])
 	return r
 
 # Map geladen: die mit char_enter gewählte Figur kommt in die Welt
@@ -679,7 +702,7 @@ func _gather_cancel(id: int, _p: Dictionary, _args: Dictionary) -> Array:
 
 func _db_result(r: Array) -> Array:
 	if r[0] == Proto.Code.SERVER_ERROR:
-		log_line("FEHLER Datenbank: " + db.last_error)
+		log_line("ОШИБКА базы данных: " + db.last_error)
 	return r
 
 func _kick_after_reply(id: int, code: int) -> void:
@@ -704,6 +727,10 @@ static func _printable(s: String) -> String:
 # ZEITGEBER, STATUS, ENDE
 # ====================================================
 func _poll() -> void:
+	if _parent_pid > 0 and not _editor_parent_alive() and not _stopping:
+		log_line("Редактор Godot закрыт; сервер завершает работу")
+		stop()
+		return
 	if FileAccess.file_exists(stop_file) and not _stopping:
 		stop()
 		return
@@ -718,8 +745,17 @@ func _poll() -> void:
 		if now - p["at"] > limit * 1000.0:
 			p["at"] = now # nur einmal trennen
 			kick(id, Proto.Code.NOT_READY if not p["hello"] else Proto.Code.NOT_LOGGED_IN)
-	if _status_dirty:
+	if _status_dirty or now - _status_at >= 1000:
 		_write_status(true)
+
+func _editor_parent_alive() -> bool:
+	if not FileAccess.file_exists(parent_heartbeat_file):
+		return false
+	var fields = FileAccess.get_file_as_string(parent_heartbeat_file).split("|", false)
+	if fields.size() != 2 or int(fields[0]) != _parent_pid:
+		return false
+	var age = Time.get_unix_time_from_system() - float(fields[1])
+	return age >= -1.0 and age <= 4.0
 
 # Welt-Takt (10 / s) mit Zeitmessung
 func _tick() -> void:
@@ -747,14 +783,14 @@ func _measure_load(now: int) -> void:
 		_status_dirty = true
 		if now - _load_logged >= LOAD_LOG * 1000.0:
 			_load_logged = now
-			log_line("Last: %d in der Welt, Takt Ø %.2f ms (max %.2f ms), längstes Bild %.1f ms, Netz %.1f kB/s raus, %.1f kB/s rein" % [
+			log_line("Нагрузка: в мире %d игроков, средний тик %.2f мс (максимум %.2f мс), длинный кадр %.1f мс, сеть: отправка %.1f КБ/с, приём %.1f КБ/с" % [
 				_load["in_world"], _load["tick_avg_ms"], _load["tick_max_ms"], _load["frame_max_ms"], _load["sent_kbps"], _load["recv_kbps"]])
 
 func stop() -> void:
 	_stopping = true
 	_ticker.stop() # nach dem Speichern ändert sich nichts mehr
 	DirAccess.remove_absolute(stop_file)
-	log_line("Server wird beendet (%d Verbindungen, %d angemeldet)" % [peers.size(), online.size()])
+	log_line("Завершение сервера (соединений: %d, вошедших аккаунтов: %d)" % [peers.size(), online.size()])
 	for j in _jobs:
 		WorkerThreadPool.wait_for_task_completion(j["task"])
 	_jobs.clear()
@@ -768,7 +804,7 @@ func stop() -> void:
 	peer.close()
 	db.close()
 	_write_status(false)
-	log_line("Server beendet")
+	log_line("Сервер остановлен")
 	get_tree().quit()
 
 # Ringverweise lösen (Welt <-> Kampf, Quests <-> Inventar, Inventar -> Welt), sonst bleiben die Teile
@@ -808,6 +844,7 @@ func _exit_tree() -> void:
 
 func _write_status(running: bool) -> void:
 	_status_dirty = false
+	_status_at = Time.get_ticks_msec()
 	var players_out = []
 	for id in peers:
 		var p = peers[id]
@@ -817,7 +854,7 @@ func _write_status(running: bool) -> void:
 	if f == null:
 		return
 	f.store_string(JSON.stringify({
-		"running": running, "pid": OS.get_process_id(), "port": port, "started": _started,
+		"running": running, "pid": OS.get_process_id(), "port": port, "started": _started, "heartbeat": Time.get_unix_time_from_system(),
 		"protocol": Proto.VERSION, "dtls": dtls, "connections": peers.size(),
 		"players": players_out, "maps": world.size(),
 		"in_world": game_world.players.size() if game_world != null else 0, "load": _load,

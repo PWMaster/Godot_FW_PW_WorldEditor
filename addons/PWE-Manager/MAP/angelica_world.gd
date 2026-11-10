@@ -3,14 +3,14 @@ extends RefCounted
 
 # ====================================================
 # Objekte und Wasser einer Map (maps\<map>\<map>.ecwld, CECWorld / ESWorld) -> Godot.
-# .ecwld Version 13 / 14 (Forsaken World; der ESWorldLoader der Quellen liest erst ab 20, das
+# .ecwld Version 12–14 (Perfect World / Forsaken World; der ESWorldLoader der Quellen liest erst ab 20, das
 # Format hier ist aus den Daten bestimmt): Kopf ESWorldFileHeader (116 Bytes), iNumBlock
 # Block-Offsets (DWORD), je Block (Reihenfolge der Blöcke beliebig):
 #   WORD Zeile, WORD Spalte, 10 Zähler: Bäume, Wasser, Gras, Gebäude, Box-Bereiche, Effekte,
 #   ECModelle, Kleintiere, Bezier-Routen, Sounds (ab 20 dazu Spiegel, Kollision, Laderadius)
 #   Bäume, Wasser, Gebäude, Box-Bereiche, Gras: ECWDFILEDATAREF (Export-ID, Offset in der .ecbsd)
 #   Effekte:   ECWDFILEEFFECT12 (60 Bytes) + GfxPath (AString, relativ zu gfx\)
-#   ECModelle: ECWDFILEECMODEL (44 Bytes) + ECM-Pfad (relativ zum Spielordner) + Aktion
+#   ECModelle: ECWDFILEECMODEL (40 Bytes) + ECM-Pfad (relativ zum Spielordner) + Aktion
 #   Kleintiere, Bezier-Routen: Referenzen
 #   Sounds:    Export-ID, Position, Min- / Max-Abstand, 0, Tageszeit (32 Bytes; v14: + 20 Bytes
 #              Kegel o.ä., ungenutzt) + Pfad (relativ zu sfx\)
@@ -45,8 +45,8 @@ const BSD_HEADER_END = 76 # "MOXB" + ESBSDFileHeader (72)
 const BLOCK_INFO_SIZE = 44
 const BOXAREA_LIGHT_END = 144 # ECBSDFILEBOXAREA bis dwDirLtCol_n
 const EFFECT_SIZE = 60 # ECWDFILEEFFECT12 (mit Füllbytes)
-const ECMODEL_SIZE = 44 # ECWDFILEECMODEL
-const SOUND_SIZE = {13: 32, 14: 52} # je Version, zugleich die lesbaren Versionen
+const ECMODEL_SIZE = 40 # ECWDFILEECMODEL in PW 155
+const SOUND_SIZE = {12: 32, 13: 32, 14: 52} # je Version, zugleich die lesbaren Versionen
 const WATER_MIN_VERSION = 0x10002000
 const WATER_MINOR_VERSION = 0x10003000
 const WATERGRID_VISIBLE = 0x01
@@ -60,6 +60,8 @@ const Buildings = preload("angelica_buildings.gd")
 var importer # ecm_importer.gd
 var _sounds = {} # Quelle -> AudioStream (null = fehlt)
 var _world = {} # read_world der Map samt "bsd" (Bytes der .ecbsd), einmal je Map gelesen
+var _runtime_water_areas = []
+var _runtime_chunks = {}
 
 
 func _init(p_importer) -> void:
@@ -81,7 +83,7 @@ func read_world(path: String) -> Dictionary:
 		return {"error": path.get_file() + ": keine Szenen-Datei"}
 	var ver = b.decode_u32(4)
 	if not SOUND_SIZE.has(ver):
-		return {"error": path.get_file() + ": Version %d wird nicht unterstützt (nur 13 / 14)" % ver}
+		return {"error": path.get_file() + ": Version %d wird nicht unterstützt (12–14)" % ver}
 	var num_block = b.decode_s32(24)
 	if HEADER_SIZE + num_block * 4 > b.size():
 		return {"error": path.get_file() + ": Block-Tabelle abgeschnitten"}
@@ -94,7 +96,7 @@ func read_world(path: String) -> Dictionary:
 		var n = []
 		for k in 10:
 			n.append(b.decode_s32(p + 4 + k * 4))
-		p += BLOCK_INFO_SIZE + 8 * n[0]
+		p += BLOCK_INFO_SIZE + (16 if ver >= 5 else 8) * n[0]
 		for k in n[1]:
 			out["water"][b.decode_u32(p)] = b.decode_u32(p + 4)
 			p += 8
@@ -120,8 +122,7 @@ func read_world(path: String) -> Dictionary:
 		for k in n[6]:
 			if p + ECMODEL_SIZE + 8 > b.size():
 				return {"error": path.get_file() + ": Block %d abgeschnitten" % i}
-			var m = {"id": b.decode_u32(p), "pos": _vec(b, p + 4), "dir": _vec(b, p + 16),
-				"up": _vec(b, p + 28), "show_type": b.decode_s32(p + 40)}
+			var m = {"id": b.decode_u32(p), "pos": _vec(b, p + 4), "dir": _vec(b, p + 16), "up": _vec(b, p + 28), "show_type": -1}
 			at[0] = p + ECMODEL_SIZE
 			m["path"] = _string(b, at)
 			m["action"] = _string(b, at)
@@ -277,6 +278,67 @@ func build(trn2_path: String, root: Node3D, out_dir: String) -> Dictionary:
 	for msg in spawns.warnings:
 		importer.warn(msg)
 	return counts
+
+func build_runtime_manifest(columns: int, rows: int, cell_size: float, width: float, length: float) -> void:
+	_runtime_chunks.clear()
+	if _world.is_empty() or _world.has("error") or cell_size <= 0.0:
+		return
+	var processed = 0
+	for kind in ["effects", "models", "sounds"]:
+		for entry in _world[kind]:
+			var pos: Vector3 = entry["pos"]
+			var col = clampi(int(floor((pos.x + width * 0.5) / cell_size)), 0, columns - 1)
+			var row = clampi(int(floor((length * 0.5 - pos.z) / cell_size)), 0, rows - 1)
+			var index = row * columns + col
+			if not _runtime_chunks.has(index):
+				_runtime_chunks[index] = {"effects": [], "models": [], "sounds": [], "water": []}
+			_runtime_chunks[index][kind].append(entry)
+			processed += 1
+			if processed % 512 == 0:
+				await (Engine.get_main_loop() as SceneTree).process_frame
+	_runtime_water_areas = read_water(_world["bsd_path"], _world["bsd"], _world["water"])
+	for area in _runtime_water_areas:
+		var center: Vector3 = area["center"]
+		var col = clampi(int(floor((center.x + width * 0.5) / cell_size)), 0, columns - 1)
+		var row = clampi(int(floor((length * 0.5 - center.z) / cell_size)), 0, rows - 1)
+		var index = row * columns + col
+		if not _runtime_chunks.has(index):
+			_runtime_chunks[index] = {"effects": [], "models": [], "sounds": [], "water": []}
+		_runtime_chunks[index]["water"].append(area)
+
+func build_runtime_chunk(index: int, root: Node3D) -> void:
+	var w = _world
+	if w.is_empty() or w.has("error"):
+		return
+	var chunk: Dictionary = _runtime_chunks.get(index, {"effects": [], "models": [], "sounds": [], "water": []})
+	var objects = Node3D.new()
+	objects.name = "Objects"
+	objects.set_script(OBJECTS_SCRIPT)
+	root.add_child(objects)
+	objects.owner = root
+	var effects = _group(objects, "Effects", root)
+	var models = _group(objects, "Models", root)
+	var sounds = _group(objects, "Sounds", root)
+	var effect_count = 0
+	for entry in chunk["effects"]:
+		effect_count += _build_effects([entry], effects, root)
+		if effect_count % 2 == 0:
+			await (Engine.get_main_loop() as SceneTree).process_frame
+	var model_count = 0
+	for entry in chunk["models"]:
+		model_count += _build_models([entry], models, root)
+		if model_count % 2 == 0:
+			await (Engine.get_main_loop() as SceneTree).process_frame
+	var sound_count = 0
+	for entry in chunk["sounds"]:
+		sound_count += _build_sounds([entry], sounds, root)
+		if sound_count % 2 == 0:
+			await (Engine.get_main_loop() as SceneTree).process_frame
+	for area in chunk["water"]:
+		_build_water([area], root, "")
+		await (Engine.get_main_loop() as SceneTree).process_frame
+	objects.apply_time()
+
 
 # Nur das Licht ("Sun", "Environment") der Map unter root bauen, z.B. zur Laufzeit für eine Map,
 # die vor dem Licht-Import importiert wurde -> false, wenn die Daten fehlen

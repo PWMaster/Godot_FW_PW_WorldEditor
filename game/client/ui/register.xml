@@ -3,10 +3,10 @@
 		<FrameImage FileName="MsgBoxFrame.tga"/>
 	</Resource>
 	<LABEL Name="Lab_Title" x="214" y="24" Align="1">
-		<Text String="Konto anlegen" FontName="方正隶二简体" FontSize="14" Shadow="255" Color="243,241,213,255"/>
+		<Text String="Создание учётной записи" FontName="方正隶二简体" FontSize="14" Shadow="255" Color="243,241,213,255"/>
 	</LABEL>
 	<LABEL Name="Lab_Account" x="150" y="67" Align="2">
-		<Text String="Konto:" FontName="方正细黑一简体" FontSize="12" Shadow="255"/>
+		<Text String="Имя:" FontName="方正细黑一简体" FontSize="12" Shadow="255"/>
 	</LABEL>
 	<EDIT Name="Edt_Back1" x="160" y="59" Width="172" Height="32" ReadOnly="true">
 		<Resource>
@@ -17,7 +17,7 @@
 		<Text FontName="方正隶二简体" FontSize="12" Shadow="255" Color="184,240,246,255"/>
 	</EDIT>
 	<LABEL Name="Lab_Password" x="150" y="109" Align="2">
-		<Text String="Passwort:" FontName="方正细黑一简体" FontSize="12" Shadow="255"/>
+		<Text String="Пароль:" FontName="方正细黑一简体" FontSize="12" Shadow="255"/>
 	</LABEL>
 	<EDIT Name="Edt_Back2" x="160" y="101" Width="172" Height="32" ReadOnly="true">
 		<Resource>
@@ -28,7 +28,7 @@
 		<Text FontName="方正隶二简体" FontSize="12" Shadow="255" Color="184,240,246,255"/>
 	</EDIT>
 	<LABEL Name="Lab_Password2" x="150" y="151" Align="2">
-		<Text String="Wiederholen:" FontName="方正细黑一简体" FontSize="12" Shadow="255"/>
+		<Text String="Повторите пароль:" FontName="方正细黑一简体" FontSize="12" Shadow="255"/>
 	</LABEL>
 	<EDIT Name="Edt_Back3" x="160" y="143" Width="172" Height="32" ReadOnly="true">
 		<Resource>
@@ -39,10 +39,10 @@
 		<Text FontName="方正隶二简体" FontSize="12" Shadow="255" Color="184,240,246,255"/>
 	</EDIT>
 	<LABEL Name="Lab_Rules" x="214" y="186" Align="1">
-		<Text String="Konto 4 - 20 Zeichen, Passwort mindestens 6" FontName="方正细黑一简体" FontSize="10" Shadow="255" Color="190,190,190,255"/>
+		<Text String="Имя: 4–20 символов, пароль: не менее 6" FontName="方正细黑一简体" FontSize="10" Shadow="255" Color="190,190,190,255"/>
 	</LABEL>
 	<STILLIMAGEBUTTON Name="Btn_Create" x="122" y="210" Width="82" Height="23" Command="IDOK">
-		<Text String="Anlegen" FontName="方正隶二简体" FontSize="12" Shadow="255" Color="164,228,255,255"/>
+		<Text String="Создать" FontName="方正隶二简体" FontSize="12" Shadow="255" Color="164,228,255,255"/>
 		<Resource>
 			<FrameUpImage FileName="SM2\button\button1.tga"/>
 			<FrameDownImage FileName="SM2\button\button3.tga"/>
@@ -50,7 +50,7 @@
 		</Resource>
 	</STILLIMAGEBUTTON>
 	<STILLIMAGEBUTTON Name="Btn_Cancel" x="226" y="210" Width="82" Height="23" Command="IDCANCEL">
-		<Text String="Abbrechen" FontName="方正隶二简体" FontSize="12" Shadow="255" Color="164,228,255,255"/>
+		<Text String="Отмена" FontName="方正隶二简体" FontSize="12" Shadow="255" Color="164,228,255,255"/>
 		<Resource>
 			<FrameUpImage FileName="SM2\button\button1.tga"/>
 			<FrameDownImage FileName="SM2\button\button3.tga"/>

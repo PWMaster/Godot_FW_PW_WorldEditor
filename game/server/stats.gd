@@ -14,6 +14,7 @@ extends RefCounted
 # ====================================================
 
 const PLUGIN_SERVER = "res://addons/PWE-Manager/Server/"
+const Settings = preload("../common/settings.gd")
 
 var classes = {} # Klasse (String) -> Werte
 var level_exp: Array = []
@@ -21,7 +22,7 @@ var hp_mp_modify: Array = []
 
 
 func _init() -> void:
-	var path = PLUGIN_SERVER + "class_templates.json"
+	var path = Settings.server_data_path("class_templates.json")
 	var d = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
 	if d is Dictionary:
 		classes = d.get("classes", {})

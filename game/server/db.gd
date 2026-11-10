@@ -31,7 +31,7 @@ static func available() -> bool:
 func open(file: String) -> String:
 	close()
 	if not available():
-		return "SQLite-Erweiterung fehlt (addons/sqlite3.gd)"
+		return "Не загружено расширение SQLite (addons/sqlite3.gd)"
 	path = ProjectSettings.globalize_path(file)
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	_s = ClassDB.instantiate(&"Sqlite3Wrapper")
@@ -110,7 +110,7 @@ func changes() -> int:
 
 func _prepare(sql: String, params: Array) -> Object:
 	if not is_open():
-		_fail("Datenbank nicht geöffnet", sql)
+		_fail("База данных не открыта", sql)
 		return null
 	var r: Dictionary = _s.prepare_v2(_db, sql, -1)
 	var st = r.get("statement")

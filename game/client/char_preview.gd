@@ -159,5 +159,5 @@ func _take_warnings() -> void:
 	for w in model.warnings:
 		if not w in warnings:
 			warnings.append(w)
-			push_warning("Figur: " + w)
+			push_warning("Персонаж: " + w)
 	model.warnings.clear()

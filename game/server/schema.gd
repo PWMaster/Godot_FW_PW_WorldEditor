@@ -100,7 +100,7 @@ static func migrate(db) -> String:
 		return db.last_error
 	v = int(v)
 	if v > MIGRATIONS.size():
-		return "Datenbank hat Version %d, dieses Spiel kennt nur bis %d" % [v, MIGRATIONS.size()]
+		return "Версия базы данных %d новее поддерживаемой этой игрой версии %d" % [v, MIGRATIONS.size()]
 	while v < MIGRATIONS.size():
 		if not db.begin():
 			return db.last_error

@@ -75,6 +75,57 @@ func read_bmd(path: String) -> Dictionary:
 	out["meshes"] = meshes
 	return out
 
+func read_bmd_position(path: String) -> Dictionary:
+	var b = importer.files.get_bytes(path)
+	if b.size() < 64 or b.slice(0, 4).get_string_from_ascii() != "MOXB":
+		return {"error": "Не удалось прочитать положение здания: " + path.get_file()}
+	var at = 4
+	if b.decode_u32(at) >= BUILDING_FLAGS_VERSION:
+		at += 5
+	var version = b.decode_u32(at)
+	if version != 0x10000001 and version != 0x10000002:
+		return {"error": "Неизвестная версия здания: " + path.get_file()}
+	at += 4
+	return {"position": Vector3(b.decode_float(at + 36), b.decode_float(at + 40), b.decode_float(at + 44))}
+
+func read_runtime_chunk(paths: PackedStringArray) -> Array:
+	var out = []
+	for path in paths:
+		var model = read_bmd(path)
+		if not model.has("error") and not model["collide_only"]:
+			out.append({"path": path, "model": model})
+	return out
+
+func runtime_manifest(paths: PackedStringArray, columns: int, rows: int, cell_size: float, width: float, length: float) -> Dictionary:
+	var chunks = {}
+	for path in paths:
+		var record = read_bmd_position(path)
+		if record.has("error"):
+			continue
+		var pos: Vector3 = record["position"]
+		var col = clampi(int(floor((pos.x + width * 0.5) / cell_size)), 0, columns - 1)
+		var row = clampi(int(floor((length * 0.5 - pos.z) / cell_size)), 0, rows - 1)
+		var index = row * columns + col
+		if not chunks.has(index):
+			chunks[index] = PackedStringArray()
+		chunks[index].append(path)
+	return chunks
+
+func runtime_manifest_for_map(map_name: String, wanted_paths: Array, columns: int, rows: int, cell_size: float, width: float, length: float) -> Dictionary:
+	var dir = importer.find_game_dir("litmodels/" + map_name)
+	if dir == "":
+		return {}
+	var all_paths = []
+	_collect(dir, all_paths)
+	var wanted = {}
+	for rel in wanted_paths:
+		wanted[str(rel).replace("\\", "/").to_lower()] = true
+	var paths = PackedStringArray()
+	for path in all_paths:
+		if wanted.has(path.substr(dir.length() + 1).to_lower()):
+			paths.append(path)
+	return runtime_manifest(paths, columns, rows, cell_size, width, length)
+
 func _read_mesh(b: PackedByteArray, p: int) -> Dictionary:
 	if p + 336 > b.size():
 		return {"error": "Datei zu kurz"}
@@ -174,7 +225,7 @@ func _cstr(b: PackedByteArray, at: int, n: int) -> String:
 # Gebäude der Map -> Szene scene_path. only: Pfade relativ zu litmodels\<map>\, die die Map nennt
 # (angelica_world.gd building_files), null = alle im Ordner. {"scene", "count", "skipped",
 # "unused"}; "scene" fehlt, wenn die Map keine Gebäude hat
-func build(map_name: String, scene_path: String, only = null) -> Dictionary:
+func build(map_name: String, scene_path: String, only = null, stream_config: Dictionary = {}) -> Dictionary:
 	var dir = importer.find_game_dir("litmodels/" + map_name)
 	if dir == "":
 		return {"count": 0, "skipped": 0, "unused": 0}
@@ -192,38 +243,80 @@ func build(map_name: String, scene_path: String, only = null) -> Dictionary:
 	var root = Node3D.new()
 	root.name = "Buildings"
 	var groups = {}
+	var chunk_roots = {}
 	var count = 0
 	var skipped = 0
-	for f in files:
+	for file_index in files.size():
+		var f: String = files[file_index]
 		var d = read_bmd(f)
 		if d.has("error"):
 			_warn(d["error"])
+			if file_index % 16 == 15:
+				await (Engine.get_main_loop() as SceneTree).process_frame
 			continue
 		if d["collide_only"]:
 			skipped += 1
+			if file_index % 16 == 15:
+				await (Engine.get_main_loop() as SceneTree).process_frame
 			continue
 		var mesh = _mesh(d)
 		if mesh == null:
+			if file_index % 16 == 15:
+				await (Engine.get_main_loop() as SceneTree).process_frame
 			continue
+		var parent_root = root
+		var chunk_index = -1
+		var chunk_groups: Dictionary = groups
+		if not stream_config.is_empty():
+			var cell_size = float(stream_config["cell_size"])
+			var cols = int(stream_config["columns"])
+			var rows = int(stream_config["rows"])
+			var col = clampi(int(floor((d["pos"].x + float(stream_config["width"]) * 0.5) / cell_size)), 0, cols - 1)
+			var row = clampi(int(floor((float(stream_config["length"]) * 0.5 - d["pos"].z) / cell_size)), 0, rows - 1)
+			chunk_index = row * cols + col
+			if not chunk_roots.has(chunk_index):
+				var chunk_root = Node3D.new()
+				chunk_root.name = "Buildings_%05d" % chunk_index
+				chunk_roots[chunk_index] = {"root": chunk_root, "groups": {}}
+			parent_root = chunk_roots[chunk_index]["root"]
+			chunk_groups = chunk_roots[chunk_index]["groups"]
 		var group_name: String = f.get_base_dir().substr(dir.length()).trim_prefix("/")
 		if group_name == "":
 			group_name = "Main"
-		if not groups.has(group_name):
+		if not chunk_groups.has(group_name):
 			var g = Node3D.new()
 			g.name = group_name.replace("/", "_")
-			root.add_child(g)
-			g.owner = root
-			groups[group_name] = g
+			parent_root.add_child(g)
+			g.owner = parent_root
+			chunk_groups[group_name] = g
 		var mi = MeshInstance3D.new()
 		mi.name = f.get_file().get_basename()
 		mi.mesh = mesh
 		mi.transform = _transform(d)
-		groups[group_name].add_child(mi)
-		mi.owner = root
+		chunk_groups[group_name].add_child(mi)
+		mi.owner = parent_root
 		count += 1
+		if file_index % 16 == 15:
+			if importer.progress_callback.is_valid():
+				importer.progress_callback.call("Импорт зданий: файл %d из %d, собрано %d" % [file_index + 1, files.size(), count])
+			await (Engine.get_main_loop() as SceneTree).process_frame
 	if count == 0:
 		root.free()
 		return {"count": 0, "skipped": skipped, "unused": unused}
+	if not stream_config.is_empty():
+		root.free()
+		var chunks = PackedInt32Array()
+		for index in chunk_roots:
+			var chunk = chunk_roots[index]["root"]
+			var chunk_scene = PackedScene.new()
+			var pack_err = chunk_scene.pack(chunk)
+			chunk.free()
+			if pack_err == OK:
+				pack_err = importer.save_resource(chunk_scene, scene_path.get_base_dir().path_join("buildings/chunk_%05d.scn" % int(index)))
+			if pack_err != OK:
+				return {"error": "Gebäude-Chunk %05d nicht gespeichert (%s)" % [int(index), error_string(pack_err)]}
+			chunks.append(int(index))
+		return {"count": count, "skipped": skipped, "unused": unused, "chunks": chunks}
 	var packed = PackedScene.new()
 	var err = packed.pack(root)
 	root.free()

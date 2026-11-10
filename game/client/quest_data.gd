@@ -64,7 +64,7 @@ func open(data_root: String, language: String) -> String:
 	var script = load(TASKS)
 	var path: String = script.locate(files, language)
 	if path == "":
-		return "tasks.data fehlt"
+		return "Не найден tasks.data"
 	tasks = script.new()
 	var err = tasks.open(path, files)
 	if err != "":
@@ -94,7 +94,7 @@ func _read_icons(files, language: String) -> void:
 				for topic in info[qbt]:
 					icons[[int(qbt), int(topic)]] = str(info[qbt][topic].get("icon", ""))
 	else:
-		warnings.append("NPCTaskInfo.lua nicht lesbar")
+		warnings.append("Не удалось прочитать NPCTaskInfo.lua")
 	lua.close()
 	# QuestList.txt: Breite, Höhe, Zeilen, Spalten, dann die Namen zeilenweise (CECImageSet::Init)
 	var txt = ""
@@ -105,7 +105,7 @@ func _read_icons(files, language: String) -> void:
 			break
 	var lines = txt.replace("\r", "").split("\n")
 	if lines.size() < 4:
-		warnings.append("QuestList.txt nicht lesbar")
+		warnings.append("Не удалось прочитать QuestList.txt")
 		return
 	var w = int(lines[0])
 	var h = int(lines[1])

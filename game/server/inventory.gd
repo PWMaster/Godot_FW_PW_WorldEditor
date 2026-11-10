@@ -24,6 +24,7 @@ extends RefCounted
 # ====================================================
 
 const Proto = preload("../common/protocol.gd")
+const Settings = preload("../common/settings.gd")
 const PLUGIN_SERVER = "res://addons/PWE-Manager/Server/"
 const BAG_SIZE = 24 # Startvorlagen inventory_size
 const BAG = 0
@@ -50,10 +51,10 @@ func _init(p_db, p_net, p_log: Callable, p_stats) -> void:
 
 # item_templates.json laden -> "" oder Fehlertext
 func load_templates() -> String:
-	var path = PLUGIN_SERVER + "item_templates.json"
+	var path = Settings.server_data_path("item_templates.json")
 	var d = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
 	if not d is Dictionary or not d.has("items"):
-		return path + " fehlt oder ist unlesbar"
+		return "Файл отсутствует или недоступен для чтения: " + path
 	for k in d["items"]:
 		items[int(k)] = _ints(d["items"][k])
 	for k in d.get("mines", {}):
@@ -236,7 +237,7 @@ func equip(peer: int, p: Dictionary, pos: int) -> Array:
 	else:
 		p["bag"].erase(pos)
 		_delete(p, BAG, pos)
-	log_line.call("Ausrüstung: %s legt %d an (Platz %d)%s" % [p["name"], e[0], slot, (", %d zurück in die Tasche" % old) if old != 0 else ""])
+	log_line.call("Экипировка: %s надел предмет %d (ячейка %d)%s" % [p["name"], e[0], slot, (", предмет %d перемещён в инвентарь" % old) if old != 0 else ""])
 	_changed(peer, p)
 	return [Proto.Code.OK, {"slot": slot}]
 
@@ -252,7 +253,7 @@ func unequip(peer: int, p: Dictionary, slot: int, to: int = -1) -> Array:
 	_delete(p, EQUIP, slot)
 	p["bag"][to] = [id, 1]
 	_save(p, BAG, to, id, 1)
-	log_line.call("Ausrüstung: %s legt %d ab (Platz %d -> Tasche %d)" % [p["name"], id, slot, to])
+	log_line.call("Экипировка: %s снял предмет %d (ячейка %d → инвентарь %d)" % [p["name"], id, slot, to])
 	_changed(peer, p)
 	return [Proto.Code.OK, {"pos": to}]
 
@@ -404,7 +405,7 @@ func tick(peer: int, p: Dictionary, nm) -> void:
 	if not m.get("perm", false):
 		nm.harvest(g["id"], Time.get_ticks_msec() / 1000.0)
 	net.push(peer, "gather_end", {"id": g["id"], "ok": true, "items": got})
-	log_line.call("Sammeln: %s an %d -> %s" % [p["name"], int(g["tid"]), str(got)])
+	log_line.call("Сбор ресурсов: %s у точки %d → %s" % [p["name"], int(g["tid"]), str(got)])
 	if quests != null and not got.is_empty():
 		quests.check_items(peer, p)
 
@@ -415,8 +416,8 @@ func tick(peer: int, p: Dictionary, nm) -> void:
 func _save(p: Dictionary, loc: int, pos: int, id: int, count: int) -> void:
 	if not db.run("INSERT OR REPLACE INTO inventory (character_id, location, pos, item_id, count) VALUES (?, ?, ?, ?, ?)",
 			[p["id"], loc, pos, id, count]):
-		log_line.call("FEHLER Datenbank: " + db.last_error)
+		log_line.call("ОШИБКА базы данных: " + db.last_error)
 
 func _delete(p: Dictionary, loc: int, pos: int) -> void:
 	if not db.run("DELETE FROM inventory WHERE character_id = ? AND location = ? AND pos = ?", [p["id"], loc, pos]):
-		log_line.call("FEHLER Datenbank: " + db.last_error)
+		log_line.call("ОШИБКА базы данных: " + db.last_error)

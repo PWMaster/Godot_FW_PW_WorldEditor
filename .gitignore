@@ -1,6 +1,11 @@
 # Godot
 .godot/
 /android/
+/ECM_Import/
+/Abgleich-Bericht.txt
+/.codex/
+/PORTING-NOTES.md
+/parse_probe.gd.uid
 
 # Original game data - not distributed; bring your own client / server files
 /Stock-PWE-Client/
@@ -9,6 +14,7 @@
 /GFX_Load/
 /addons/PWE-Manager/Server/data/
 /addons/PWE-Manager/Server/*.json
+/addons/PWE-Manager/Server/**/*.json
 
 # Internal notes
 /addons/PWE-Manager/Docs/

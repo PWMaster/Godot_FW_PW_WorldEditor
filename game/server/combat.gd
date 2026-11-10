@@ -33,6 +33,7 @@ extends RefCounted
 # ====================================================
 
 const Proto = preload("../common/protocol.gd")
+const Settings = preload("../common/settings.gd")
 const Buffs = preload("buffs.gd")
 const PLUGIN_SERVER = "res://addons/PWE-Manager/Server/"
 const PLAYER_ATTACK_INTERVAL = 2.0
@@ -62,7 +63,7 @@ func _init(p_world, p_net, p_log: Callable, p_stats) -> void:
 	net = p_net
 	log_line = p_log
 	stats = p_stats
-	var path = PLUGIN_SERVER + "start_roles.json"
+	var path = Settings.server_data_path("start_roles.json")
 	var d = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
 	for r in (d.get("roles", []) if d is Dictionary else []):
 		var tw = int(r.get("town_world", 0))

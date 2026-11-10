@@ -6,6 +6,7 @@ extends RefCounted
 # A3DSklTrackSet in Angelica2.2/Angelica3D). Alle beginnen mit "MOXB" (AFile binär).
 #   .smd v8:  Skelett (.bon), Skins (.ski), Aktionen (Name, Start-/End-Frame, .stck)
 #   .bon v6:  Bones (Relativ- und BoneInit-Matrix, Flags), Joints, Hooks
+#   .ski v8:  Skeleton-Bone-Indizes, Texturen, Materialien, Skin- und Rigid-Meshes
 #   .ski v9:  Bone-Namen, Texturen, Materialien, Skin- und Rigid-Meshes
 #   .stck v1: je Joint eine Positions- und eine Rotationsspur (Keys + Segmente)
 # Matrizen sind Zeilenvektor-Matrizen (v * M): Zeile 0-2 = Achsen, Zeile 3 = Position;
@@ -185,16 +186,20 @@ func read_ski(path: String) -> Dictionary:
 	var n_tex = r.i32()
 	var n_mat = r.i32()
 	var n_bone = r.i32()
-	r.skip(8) # fMinWeight, iNumSkeBone
+	r.skip(4) # fMinWeight
+	var n_skeleton_bone = r.i32()
 	var n_other = r.i32() + r.i32() # Supple, Muscle
 	r.skip(52)
-	if ver != 9:
+	if ver != 8 and ver != 9:
 		return _err(path, ".ski-Version %d wird noch nicht unterstützt" % ver)
 	if n_morph + n_other > 0:
 		return _err(path, "Morph-/Supple-/Muscle-Meshes werden nicht unterstützt")
 	var out = {"path": path, "bone_names": [], "textures": [], "materials": [], "skin_meshes": [], "rigid_meshes": []}
-	for i in n_bone:
-		out["bone_names"].append(_text(r.astr()))
+	if ver >= 9:
+		for i in n_bone:
+			out["bone_names"].append(_text(r.astr()))
+	out["version"] = ver
+	out["num_ske_bone"] = n_skeleton_bone
 	for i in n_tex:
 		out["textures"].append(_text(r.astr()))
 	for i in n_mat:

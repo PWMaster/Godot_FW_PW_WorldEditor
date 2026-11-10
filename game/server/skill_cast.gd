@@ -31,6 +31,7 @@ const Proto = preload("../common/protocol.gd")
 const Expr = preload("skill_expr.gd")
 const Buffs = preload("buffs.gd")
 const PLUGIN_SERVER = "res://addons/PWE-Manager/Server/"
+const Settings = preload("../common/settings.gd")
 const MIN_TIME = 50 # ms je Prozedur (Skill::FirstRun / Run)
 const SLACK = 1.0 # m Spielraum für die Weite (Position des Clients ist bis 0,1 s alt)
 const MOVE_CANCEL = 0.3 # m: so weit bewegt bricht das Zaubern ab
@@ -54,12 +55,12 @@ func _init(p_world, p_net, p_log: Callable, p_combat) -> void:
 	combat = p_combat
 
 func load_templates() -> String:
-	var path = PLUGIN_SERVER + "skill_templates.json"
+	var path = Settings.server_data_path("skill_templates.json")
 	if not FileAccess.file_exists(path):
-		return "%s fehlt" % path
+		return "Не найден файл %s" % path
 	var d = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not d is Dictionary:
-		return "%s ist kein JSON" % path
+		return "Файл %s содержит некорректный JSON" % path
 	for s in d.get("skills", []):
 		templates[int(s["id"])] = s
 	return ""
@@ -166,7 +167,7 @@ func cast(peer: int, p: Dictionary, id, target) -> Array:
 		a["next"] = maxf(float(a.get("next", 0.0)), (now + total) / 1000.0)
 	var act = action_name(str(sk["actions"].get("0", "")), int(ctx.get("player.action", 0)))
 	_to_viewers(p, p["pos"], "skill_start", {"src": p["id"], "id": id, "dst": target, "time": total, "act": act}, false)
-	log_line.call("Fertigkeit: %s setzt %d (%s) auf %d ein, %d ms" % [p["name"], id, sk["name"], target, total])
+	log_line.call("Умение: %s применяет %d (%s) к цели %d, время %d мс" % [p["name"], id, sk["name"], target, total])
 	if c["done"]:
 		_perform(peer, p, sk, c, nm, o)
 	return [Proto.Code.OK, {"id": id, "time": total}]
@@ -187,7 +188,7 @@ func cancel(_peer: int, p: Dictionary, force: bool, why: String = "") -> void:
 			return
 	p.erase("cast")
 	_to_viewers(p, p["pos"], "skill_end", {"src": p["id"], "id": c["id"], "ok": false}, true)
-	log_line.call("Fertigkeit: %s bricht %d ab (%s)" % [p["name"], c["id"], why])
+	log_line.call("Умение: %s прерывает %d (%s)" % [p["name"], c["id"], why])
 
 # Bewegung (world.gd move): waagrecht weiter als MOVE_CANCEL vom Ort des Zauberbeginns -> abbrechen
 func moved(peer: int, p: Dictionary) -> void:
@@ -219,7 +220,7 @@ func tick() -> void:
 		if idx >= sk["procs"].size():
 			p.erase("cast")
 			_to_viewers(p, p["pos"], "skill_end", {"src": p["id"], "id": c["id"], "ok": true}, true)
-			log_line.call("Fertigkeit: %s fertig mit %d" % [p["name"], c["id"]])
+			log_line.call("Умение: %s завершил применение %d" % [p["name"], c["id"]])
 			continue
 		var nm = world.npc_maps.get(p["map"])
 		var o = nm.objects.get(int(c["target"])) if nm != null else null
@@ -262,7 +263,7 @@ func _perform(peer: int, p: Dictionary, sk: Dictionary, c: Dictionary, nm, o) ->
 	if p["pos"].distance_to(o["pos"]) > reach + SLACK:
 		_to_viewers(p, p["pos"], "skill_end", {"src": p["id"], "id": c["id"], "ok": false}, true)
 		p.erase("cast")
-		log_line.call("Fertigkeit: %s - %d verfehlt, Ziel außer Reichweite" % [p["name"], c["id"]])
+		log_line.call("Умение: %s — промах %d, цель вне радиуса действия" % [p["name"], c["id"]])
 		return
 	var att: Dictionary = combat.player_props(p).duplicate()
 	var ratio = float(ctx.get("ratio", 1.0))

@@ -77,6 +77,7 @@ var _ski_cache = {} # .ski-Pfad -> read_ski
 var _weapon_cache = {} # .ecm-Pfad -> PackedScene oder null
 var _bon_cache = {} # .bon-Pfad -> read_bon (add_actions)
 var _ecm_cache = {} # .ecm-Pfad -> read_ecm (add_actions)
+var _legacy_model_name = ""
 
 
 func _init(data_root: String = "res://Stock-PWE-Client") -> void:
@@ -101,7 +102,18 @@ func build(p_race: int, p_gender: int, p_profession: int, look: Dictionary, acti
 	var ecm_rel = data.get("ecm", {}).get(str(race), {}).get(_g(gender), "")
 	var ecm_path = importer.find_game_file(ecm_rel) if ecm_rel != "" else ""
 	if ecm_path == "":
-		return "Modell für Rasse %d / %s fehlt (%s)" % [race, _g(gender), ecm_rel]
+		for candidate in _legacy_model_candidates(race, gender, profession):
+			var legacy_name = str(candidate)
+			var legacy_path = "models/players/形象/%s/躯干/%s.ecm" % [legacy_name, legacy_name]
+			var found_path = importer.find_game_file(legacy_path)
+			if found_path == "":
+				continue
+			_legacy_model_name = legacy_name
+			ecm_rel = legacy_path
+			ecm_path = found_path
+			break
+	if ecm_path == "":
+		return "Не найдена модель расы %d, пол %s. Проверен путь: %s" % [race, "женский" if gender == 1 else "мужской", ecm_rel]
 	var ecm = importer.read_ecm(ecm_path)
 	if ecm.has("error"):
 		return ecm["error"]
@@ -143,6 +155,9 @@ func build(p_race: int, p_gender: int, p_profession: int, look: Dictionary, acti
 	for slot in ["body", "leg", "foot", "wrist"]:
 		set_skin(slot, _default_skin(slot))
 	set_appearance(look)
+	if _meshes.is_empty() or bounds().size.length() <= 0.001:
+		var model_warnings = ", ".join(warnings)
+		return "Модель расы %d найдена (%s), но игровые файлы внешности не загрузились. Проверенные предупреждения: %s" % [race, _legacy_model_name if _legacy_model_name != "" else ecm_rel, model_warnings if model_warnings != "" else "нет подходящих файлов .ski"]
 	if not equip.is_empty():
 		set_equipment(equip)
 	_take_warnings()
@@ -239,6 +254,43 @@ func _default_skin(slot: String) -> String:
 	if p == "" and FASHION_SLOT.has(slot):
 		p = data["fashion"][FASHION_SLOT[slot]].get(str(race), {}).get(_g(gender), "")
 	return p
+
+func _legacy_model_candidates(p_race: int, p_gender: int, p_profession: int) -> Array:
+	var gender_suffix = "女" if p_gender == 1 else "男"
+	if p_race == 1:
+		return [("法师" if p_profession == 2 else "武侠") + gender_suffix, ("武侠" if p_profession == 2 else "法师") + gender_suffix]
+	if p_race == 2:
+		return [("羽灵" if p_profession == 8 else "羽芒") + gender_suffix, ("羽芒" if p_profession == 8 else "羽灵") + gender_suffix]
+	if p_race == 3:
+		return ["妖精"] if p_profession == 4 else (["妖兽男"] if p_profession == 5 else [])
+	if p_race == 4:
+		return [("刺客" if p_profession == 6 else "巫师") + gender_suffix, ("巫师" if p_profession == 6 else "刺客") + gender_suffix]
+	if p_race == 5:
+		return [("剑灵" if p_profession == 9 else "魅灵") + gender_suffix, ("魅灵" if p_profession == 9 else "剑灵") + gender_suffix]
+	if p_race == 6:
+		return [("夜影" if p_profession == 11 else "月仙") + gender_suffix, ("月仙" if p_profession == 11 else "夜影") + gender_suffix]
+	return []
+
+func _legacy_skin_rel(slot: String) -> String:
+	if _legacy_model_name == "":
+		return ""
+	var gender_folder = "女" if _legacy_model_name.ends_with("女") else "男"
+	if _legacy_model_name == "妖兽男":
+		if slot == "body":
+			return "models/players/形象/妖兽男/躯干/妖兽男1.ski"
+		if slot == "head":
+			return "models/players/形象/妖兽男/头/妖兽男头1.ski"
+	if _legacy_model_name == "妖精":
+		if slot == "body":
+			return "models/players/形象/妖精/躯干/妖精1.ski"
+		if slot == "head":
+			return "models/players/形象/妖精/头/妖精头.ski"
+	if slot == "head":
+		return "models/players/形象/%s/头/%s头.ski" % [_legacy_model_name, _legacy_model_name]
+	if slot == "hair":
+		return "models/face/%s标准脸/%s头发01.ski" % [_legacy_model_name, _legacy_model_name]
+	var outfit = {"body": "上衣", "leg": "裤子", "foot": "靴子", "wrist": "护腕"}.get(slot, "")
+	return "" if outfit == "" else "models/players/装备/%s/默认%s/%s默认%s一级.ski" % [gender_folder, outfit, _legacy_model_name, outfit]
 
 # Ausrüstung anlegen ({EQUIP_INDEX: Pfad}, Waffe {model, left, type} oder nur der Pfad); fehlende
 # Plätze bekommen die Standardkleidung zurück
@@ -362,10 +414,27 @@ func set_skin(slot: String, rel: String) -> void:
 	if old != null:
 		_free(old)
 		_meshes.erase(slot)
-	_paths[slot] = rel
-	if rel == "" or skeleton == null:
+	if skeleton == null:
+		_paths[slot] = rel
+		return
+	if rel == "":
+		rel = _legacy_skin_rel(slot)
+	if rel == "":
+		_paths[slot] = rel
 		return
 	var p = importer.find_game_file(rel)
+	if p == "":
+		var legacy_candidates = [_legacy_skin_rel(slot)]
+		if slot == "body":
+			legacy_candidates.append("models/players/形象/%s/躯干/%s.ski" % [_legacy_model_name, _legacy_model_name])
+		for legacy_rel in legacy_candidates:
+			if legacy_rel == "":
+				continue
+			p = importer.find_game_file(legacy_rel)
+			if p != "":
+				rel = legacy_rel
+				break
+	_paths[slot] = rel
 	if p == "":
 		_warn("Skin fehlt: " + rel)
 		return
@@ -415,6 +484,7 @@ func free_model() -> void:
 	if root != null:
 		_free(root)
 	root = null
+	_legacy_model_name = ""
 	skeleton = null
 	animation = null
 	weapon = null

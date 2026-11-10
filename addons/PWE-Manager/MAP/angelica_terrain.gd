@@ -10,11 +10,10 @@ extends RefCounted
 #   <sub>.t2mk   Textur-Ebenen (Textur, UV-Skalierung, Projektionsachse) und je Maskenbereich
 #                seine Ebenen mit 8-Bit-Masken; die erste Ebene hat keine Maske (voll)
 #   <sub>.t2lm   Lightmap (Tag) je Maskenbereich, meist als DDS; .t2lm1 (Nacht) bleibt ungenutzt
-# Ergebnis: <map>.tscn mit Node "Terrain", darunter je Maskenbereich (MaskBlock x MaskBlock
-# Blöcke) ein MeshInstance3D "Area_<Nr>" mit Material (angelica_terrain.gdshader), und den
-# Gebäuden der Map als eingebundene Szene "Buildings" (<map>_buildings.scn, angelica_buildings.gd),
-# dem Wasser ("Water", water/*.res) und den Objekten ("Objects": Effekte, ECModelle, Sounds) aus
-# <map>.ecwld (angelica_world.gd).
+# Standard: kleine <map>.tscn als Layout; Terrain, Gebäude, Wasser und Objekte werden zur Laufzeit
+# quellbasiert in Bereichen gelesen und um den Spieler aufgebaut. Keine vorab erzeugten .res/.scn.
+# Optionaler Ressourcenmodus: importiert die Meshes vorab; der Laufzeit-Streamer lädt Terrain und
+# Gebäude-Chunks aus dem Cache. World-Objekte in diesem Modus bleiben in der Karte.
 # Lage wie in Angelica: Mitte der Map im Ursprung, Zeile 0 oben (+z), Koordinaten unverändert
 # (wie die Modelle). Bodentexturen der Map als ein Texture2DArray (<map>_layers.res, DXT1,
 # angelica_texture_array.gd),
@@ -37,10 +36,14 @@ const MAX_LAYERS = 16 # angelica_terrain.gdshader
 const MAX_TEXTURE_SIZE = 1024 # Bodentexturen im Array
 const SHADER = preload("angelica_terrain.gdshader")
 const TextureArray = preload("angelica_texture_array.gd") # speichert seine Bilder selbst
+const StreamerScript = preload("res://game/client/terrain_streamer.gd")
 
 var importer # ecm_importer.gd: Pfade, Hinweise, Speichern
 var _cos = PackedFloat32Array()
 var _sin = PackedFloat32Array()
+var _runtime_sub_cache = {}
+var _runtime_sub_order = []
+var _runtime_sub_mutex = Mutex.new()
 
 
 func _init(p_importer) -> void:
@@ -301,6 +304,8 @@ func build(trn2_path: String, scene_path: String) -> Dictionary:
 	var t = read_trn2(trn2_path)
 	if t.has("error"):
 		return t
+	if not importer.save_resources:
+		return _save_layout(trn2_path, scene_path, t)
 	var dir = trn2_path.get_base_dir()
 	var out_dir = scene_path.get_base_dir()
 	var map_name: String = trn2_path.get_file().get_basename()
@@ -320,6 +325,7 @@ func build(trn2_path: String, scene_path: String) -> Dictionary:
 	var sub_blocks: int = t["sub_grid"] / bg # Blöcke je Seite einer Teilkarte
 	var sub_masks: int = t["sub_grid"] / t["mask_grid"] # Maskenbereiche je Seite einer Teilkarte
 	var mask_pitch: int = t["block_cols"] * bg / t["mask_grid"] # Maskenbereiche je Zeile der Map
+	var area_rows: int = t["block_rows"] * bg / t["mask_grid"]
 	var areas = 0
 	for s in t["num_sub"]:
 		var base = dir.path_join(t["subs"][s]["name"])
@@ -348,19 +354,41 @@ func build(trn2_path: String, scene_path: String) -> Dictionary:
 				continue
 			mesh.surface_set_material(0, _area_material(t, masks, a, lightmaps[a] if a < lightmaps.size() else null, layer_array, t["subs"][s]["min_height"]))
 			var index = mr * mask_pitch + mc
-			importer.save_resource(mesh, out_dir.path_join("terrain/area_%03d.res" % index))
-			var mi = MeshInstance3D.new()
-			mi.name = "Area_%03d" % index
-			mi.mesh = mesh
-			terrain.add_child(mi)
-			mi.owner = root
+			if importer.save_resources:
+				var save_err = importer.save_resource(mesh, out_dir.path_join("terrain/area_%03d.res" % index))
+				if save_err != OK:
+					root.free()
+					return {"error": "Не удалось сохранить область рельефа %03d: %s" % [index, error_string(save_err)]}
+			else:
+				var mi = MeshInstance3D.new()
+				mi.name = "Area_%03d" % index
+				mi.mesh = mesh
+				terrain.add_child(mi)
+				mi.owner = root
 			areas += 1
+		if importer.progress_callback.is_valid():
+			importer.progress_callback.call("Импорт рельефа: подкарта %d из %d, областей %d" % [s + 1, t["num_sub"], areas])
+		await (Engine.get_main_loop() as SceneTree).process_frame
 	if areas == 0:
 		root.free()
 		return {"error": trn2_path.get_file() + ": kein Maskenbereich lesbar"}
-	# Gebäude als eigene (binäre) Szene, hier eingebunden; nur die, die <map>.ecwld / .ecbsd nennen
 	var world = preload("angelica_world.gd").new(importer)
-	var buildings = preload("angelica_buildings.gd").new(importer).build(map_name, out_dir.path_join(map_name + "_buildings.scn"), world.building_files(trn2_path))
+	var buildings = await preload("angelica_buildings.gd").new(importer).build(map_name, out_dir.path_join(map_name + "_buildings.scn"), world.building_files(trn2_path), _building_stream_config(t, mask_pitch, area_rows) if importer.save_resources else {})
+	if importer.save_resources:
+		root.set_script(StreamerScript)
+		root.set_meta("terrain_dir", out_dir)
+		root.set_meta("terrain_area_count", area_rows * mask_pitch)
+		root.set_meta("terrain_area_columns", mask_pitch)
+		root.set_meta("terrain_grid_size", t["grid_size"])
+		root.set_meta("terrain_mask_grid", t["mask_grid"])
+		root.set_meta("terrain_width", t["width"])
+		root.set_meta("terrain_length", t["length"])
+		root.set_meta("building_chunk_indices", buildings.get("chunks", PackedInt32Array()))
+		var building_root = Node3D.new()
+		building_root.name = "Buildings"
+		root.add_child(building_root)
+		building_root.owner = root
+	# Gebäude als eigene (binäre) Szene, hier eingebunden; nur die, die <map>.ecwld / .ecbsd nennen
 	if buildings.has("error"):
 		_warn(buildings["error"])
 	elif buildings.has("scene"):
@@ -379,6 +407,114 @@ func build(trn2_path: String, scene_path: String) -> Dictionary:
 	out.merge(objects)
 	out["unused_buildings"] = buildings.get("unused", 0)
 	return out
+
+func _building_stream_config(t: Dictionary, columns: int, rows: int) -> Dictionary:
+	return {"columns": columns, "rows": rows, "cell_size": float(t["mask_grid"]) * float(t["grid_size"]), "width": float(t["width"]), "length": float(t["length"])}
+
+func _save_layout(trn2_path: String, scene_path: String, t: Dictionary) -> Dictionary:
+	var root = Node3D.new()
+	root.name = trn2_path.get_file().get_basename()
+	root.set_script(StreamerScript)
+	root.set_meta("source_trn2", trn2_path)
+	root.set_meta("terrain_area_count", int(t["block_rows"] * t["block_grid"] / t["mask_grid"]) * int(t["block_cols"] * t["block_grid"] / t["mask_grid"]))
+	root.set_meta("terrain_area_columns", int(t["block_cols"] * t["block_grid"] / t["mask_grid"]))
+	root.set_meta("terrain_grid_size", t["grid_size"])
+	root.set_meta("terrain_mask_grid", t["mask_grid"])
+	root.set_meta("terrain_width", t["width"])
+	root.set_meta("terrain_length", t["length"])
+	var terrain = Node3D.new()
+	terrain.name = "Terrain"
+	root.add_child(terrain)
+	terrain.owner = root
+	var buildings = Node3D.new()
+	buildings.name = "Buildings"
+	root.add_child(buildings)
+	buildings.owner = root
+	var objects = Node3D.new()
+	objects.name = "Objects"
+	root.add_child(objects)
+	objects.owner = root
+	var layout = ImmediateMesh.new()
+	layout.surface_begin(Mesh.PRIMITIVE_LINES)
+	var half_width = float(t["width"]) * 0.5
+	var half_length = float(t["length"]) * 0.5
+	layout.surface_add_vertex(Vector3(-half_width, 0.0, -half_length))
+	layout.surface_add_vertex(Vector3(half_width, 0.0, -half_length))
+	layout.surface_add_vertex(Vector3(half_width, 0.0, -half_length))
+	layout.surface_add_vertex(Vector3(half_width, 0.0, half_length))
+	layout.surface_add_vertex(Vector3(half_width, 0.0, half_length))
+	layout.surface_add_vertex(Vector3(-half_width, 0.0, half_length))
+	layout.surface_add_vertex(Vector3(-half_width, 0.0, half_length))
+	layout.surface_add_vertex(Vector3(-half_width, 0.0, -half_length))
+	layout.surface_end()
+	var outline = MeshInstance3D.new()
+	outline.name = "Границы карты"
+	outline.mesh = layout
+	var material = StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color(0.25, 0.8, 0.45)
+	outline.material_override = material
+	root.add_child(outline)
+	outline.owner = root
+	var packed = PackedScene.new()
+	var err = packed.pack(root)
+	root.free()
+	if err == OK:
+		err = importer.save_resource(packed, scene_path)
+	if err != OK:
+		return {"error": "Не удалось сохранить разметку карты: %s" % error_string(err)}
+	return {"scene": scene_path, "areas": 0, "buildings": 0, "written": importer.written, "warnings": importer.warnings}
+
+func read_area_data(trn2_path: String, t: Dictionary, index: int) -> Dictionary:
+	var bg = int(t["block_grid"])
+	var mask_grid = int(t["mask_grid"])
+	var sub_masks = int(t["sub_grid"]) / mask_grid
+	var columns = int(t["block_cols"]) * bg / mask_grid
+	var row = index / columns
+	var col = index % columns
+	var sub_index = int(row / sub_masks) * int(t["sub_cols"]) + int(col / sub_masks)
+	if sub_index < 0 or sub_index >= t["subs"].size():
+		return {"error": "Неверный номер области рельефа: %d" % index}
+	_runtime_sub_mutex.lock()
+	var sub_data: Dictionary = _runtime_sub_cache.get(sub_index, {})
+	_runtime_sub_mutex.unlock()
+	if sub_data.is_empty():
+		var base = trn2_path.get_base_dir().path_join(str(t["subs"][sub_index]["name"]))
+		var num_vert = (bg + 1) * (bg + 1)
+		sub_data = {"blocks": read_blocks(base + ".t2bk", num_vert), "masks": {}, "lightmaps": []}
+		if not sub_data["blocks"].has("error"):
+			sub_data["masks"] = read_masks(base + ".t2mk")
+			if not sub_data["masks"].has("error"):
+				sub_data["lightmaps"] = read_lightmaps(base + ".t2lm")
+		_runtime_sub_mutex.lock()
+		if _runtime_sub_cache.has(sub_index):
+			sub_data = _runtime_sub_cache[sub_index]
+		else:
+			_runtime_sub_cache[sub_index] = sub_data
+			_runtime_sub_order.append(sub_index)
+			if _runtime_sub_order.size() > 4:
+				_runtime_sub_cache.erase(_runtime_sub_order.pop_front())
+		_runtime_sub_mutex.unlock()
+	if sub_data["blocks"].has("error"):
+		return sub_data["blocks"]
+	if sub_data["masks"].has("error"):
+		return sub_data["masks"]
+	var local_area = (row % sub_masks) * sub_masks + col % sub_masks
+	return {"index": index, "row": row, "col": col, "blocks": sub_data["blocks"], "masks": sub_data["masks"], "lightmap": sub_data["lightmaps"][local_area] if local_area < sub_data["lightmaps"].size() else null,
+		"area": local_area, "min_height": float(t["subs"][sub_index]["min_height"])}
+
+func build_area_from_data(t: Dictionary, data: Dictionary, layer_array: Texture2DArray) -> Mesh:
+	if data.has("error"):
+		return null
+	var by_pos = {}
+	for block in data["blocks"].values():
+		by_pos[Vector2i(block["row"], block["col"])] = block
+	var mesh = _area_mesh(t, by_pos, int(data["row"]), int(data["col"]))
+	if mesh == null:
+		return null
+	var masks: Dictionary = data["masks"]
+	mesh.surface_set_material(0, _area_material(t, masks, int(data["area"]), data["lightmap"], layer_array, float(data["min_height"])))
+	return mesh
 
 # Teildatei ohne Groß/Klein-Unterscheidung
 func _find(path: String) -> String:
@@ -545,3 +681,44 @@ func _layer_texture_array(t: Dictionary) -> Texture2DArray:
 	var arr = TextureArray.new()
 	arr.layer_images = images
 	return arr
+
+func build_layer_texture_array_async(t: Dictionary) -> Texture2DArray:
+	var images = []
+	var size = 64
+	var builder = importer.new_builder()
+	for name in t["textures"]:
+		var src = importer.find_game_file(name)
+		var img: Image = builder.image_file(src) if src != "" else null
+		if img == null or img.is_empty():
+			_warn("Bodentextur " + name + " nicht gefunden")
+			img = Image.create(64, 64, false, Image.FORMAT_RGB8)
+			img.fill(Color(0.5, 0.5, 0.5))
+		if img.is_compressed():
+			img.decompress()
+		img.clear_mipmaps()
+		img.convert(Image.FORMAT_RGB8)
+		size = maxi(size, mini(MAX_TEXTURE_SIZE, maxi(img.get_width(), img.get_height())))
+		images.append(img)
+		await (Engine.get_main_loop() as SceneTree).process_frame
+	if images.is_empty():
+		var fallback = Image.create(64, 64, false, Image.FORMAT_RGB8)
+		fallback.fill(Color(0.5, 0.5, 0.5))
+		images.append(fallback)
+	size = nearest_po2(size)
+	for img in images:
+		if img.get_width() != size or img.get_height() != size:
+			img.resize(size, size, Image.INTERPOLATE_CUBIC)
+		img.generate_mipmaps()
+		img.compress(Image.COMPRESS_S3TC, Image.COMPRESS_SOURCE_SRGB)
+		await (Engine.get_main_loop() as SceneTree).process_frame
+	for img in images:
+		if img.get_format() != images[0].get_format():
+			for other in images:
+				if other.is_compressed():
+					other.decompress()
+				other.convert(Image.FORMAT_RGB8)
+			break
+	importer.take_builder(builder)
+	var array = TextureArray.new()
+	array.layer_images = images
+	return array

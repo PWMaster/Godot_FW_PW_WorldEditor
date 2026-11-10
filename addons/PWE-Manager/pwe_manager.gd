@@ -44,7 +44,7 @@ const ITEMS_PER_ROW: int = 30
 # ---------------------
 
 func _enter_tree():
-	add_tool_menu_item("GFX Ausführen", _on_ausfuehren_pressed)
+	add_tool_menu_item("Запустить GFX", _on_ausfuehren_pressed)
 	_ecm_panel = EcmPanel.new()
 	add_dock(_ecm_panel)
 	_player_dock = PlayerDock.new()
@@ -57,7 +57,7 @@ func _enter_tree():
 	add_dock(_check_panel)
 
 func _exit_tree():
-	remove_tool_menu_item("GFX Ausführen")
+	remove_tool_menu_item("Запустить GFX")
 	if _ecm_panel != null:
 		remove_dock(_ecm_panel)
 		_ecm_panel.queue_free()
@@ -90,7 +90,7 @@ func _on_ausfuehren_pressed():
 	var button_script = preload("res://addons/PWE-Manager/GFX/gfx_buttons.gd")
 	if root_node.get_script() != button_script:
 		root_node.set_script(button_script)
-		print("Buttons an Root Node angehängt!")
+		print("Кнопки добавлены к корневому узлу.")
 	# --------------------------------------------------
 	
 	
@@ -140,7 +140,7 @@ func _on_ausfuehren_pressed():
 					file_node.position.x = (file_counter % ITEMS_PER_ROW) * SPAWN_ABSTAND_X
 					file_node.position.z = (file_counter / ITEMS_PER_ROW) * SPAWN_ABSTAND_Z 
 					for raw_id in skipped_ids:
-						print("PWE-Manager: Überspringe unbekannte ID ", raw_id, " in Datei: ", part_name)
+						print("PWE-Manager: пропущен неизвестный идентификатор ", raw_id, " в файле: ", part_name)
 					_debug_file_node(file_node, file_path)
 					file_counter += 1
 				else:

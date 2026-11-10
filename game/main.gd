@@ -39,9 +39,13 @@ func _ready() -> void:
 			Engine.max_fps = 60
 			_add(Bot.new(), "Bot")
 		_:
+			Engine.max_fps = 60
 			_add(Net.new(), "Net")
 			_add(Session.new(), "Session")
-			if LoginScreen.available(Settings.new("client")):
+			var client_settings = Settings.new("client")
+			client_settings.use_imported_pw_client_if_missing()
+			var ui_available = LoginScreen.available(client_settings)
+			if ui_available:
 				_add(LoginScreen.new(), "Login")
 			else:
 				_add(Client.new(), "Client")

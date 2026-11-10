@@ -48,7 +48,7 @@ func load_player(p: Dictionary, template: Dictionary) -> void:
 				known[e[0]] = e[1]
 				fresh[e[0]] = true
 		if not known.is_empty():
-			log_line.call("Fertigkeiten: %s bekommt die Startfertigkeiten %s" % [p["name"], str(known.keys())])
+			log_line.call("Умения: персонаж %s получил начальные умения %s" % [p["name"], str(known.keys())])
 	for id in DEFAULT_SKILLS:
 		if not known.has(id):
 			known[id] = DEFAULT_SKILLS[id]
@@ -127,10 +127,10 @@ func learn(peer: int, p: Dictionary, id: int, level: int = 1) -> void:
 		net.push(peer, "skill_new" if is_new else "skill_level", {"id": id, "level": level})
 		if info_of.is_valid():
 			net.push(peer, "skill_info", {"id": id, "info": info_of.call(p, id)})
-		log_line.call("Fertigkeiten: %s lernt %d (Stufe %d)" % [p["name"], id, level])
+		log_line.call("Умения: %s изучил умение %d (уровень %d)" % [p["name"], id, level])
 
 func _save(p: Dictionary, id: int, level: int, is_new: bool) -> bool:
 	if db.run("INSERT OR REPLACE INTO skills (character_id, skill_id, level, new) VALUES (?, ?, ?, ?)", [p["id"], id, level, 1 if is_new else 0]):
 		return true
-	log_line.call("FEHLER Datenbank: " + db.last_error)
+	log_line.call("ОШИБКА базы данных: " + db.last_error)
 	return false

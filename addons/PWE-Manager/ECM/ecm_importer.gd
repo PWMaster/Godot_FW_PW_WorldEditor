@@ -43,6 +43,8 @@ const Parser = preload("../GFX/gfx_parser.gd")
 var files # angelica_files.gd, root = Spielordner des Modells, das gerade gebaut wird
 var reader # angelica_model_reader.gd
 var data_root = "res://Stock-PWE-Client"
+var progress_callback: Callable
+var save_resources = false
 var warnings: Array = [] # Hinweise des laufenden Imports (samt verschachtelter)
 var written: Array = [] # geschriebene Dateien des laufenden Imports (für EditorFileSystem.update_file)
 var _game_roots: Array = []
@@ -380,7 +382,7 @@ func import_map(trn2_path: String) -> Dictionary:
 	if not files.file_exists(trn2_path):
 		return {"error": trn2_path + " nicht gefunden"}
 	_enter(trn2_path)
-	var res = preload("../MAP/angelica_terrain.gd").new(self).build(trn2_path, scene_path)
+	var res = await preload("../MAP/angelica_terrain.gd").new(self).build(trn2_path, scene_path)
 	_leave()
 	if res.has("error"):
 		return res

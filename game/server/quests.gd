@@ -42,6 +42,7 @@ extends RefCounted
 # ====================================================
 
 const Proto = preload("../common/protocol.gd")
+const Settings = preload("../common/settings.gd")
 const PLUGIN_SERVER = "res://addons/PWE-Manager/Server/"
 const SERVICE_RANGE = 10.0 # m, MAX_SERVICE_DISTANCE des gs
 const ACTIVE = 0
@@ -67,10 +68,10 @@ func _init(p_db, p_net, p_log: Callable, p_stats) -> void:
 
 # quest_templates.json laden -> "" oder Fehlertext
 func load_templates() -> String:
-	var path = PLUGIN_SERVER + "quest_templates.json"
+	var path = Settings.server_data_path("quest_templates.json")
 	var d = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
 	if not d is Dictionary or not d.has("tasks"):
-		return path + " fehlt oder ist unlesbar"
+		return "Файл отсутствует или недоступен для чтения: " + path
 	for k in d["tasks"]:
 		tasks[int(k)] = _ints(d["tasks"][k])
 	for part in [[npc_out, "npc_out"], [npc_in, "npc_in"]]:
@@ -177,7 +178,7 @@ func deliver(peer: int, p: Dictionary, id: int) -> void:
 	_add_active(p, id, now)
 	_push_state(peer, p)
 	net.push(peer, "quest_event", {"id": id, "kind": "new"})
-	log_line.call("Quest: %s bekommt %d '%s'" % [p["name"], id, task(id).get("name", "")])
+	log_line.call("Задание: персонаж %s получил %d «%s»" % [p["name"], id, task(id).get("name", "")])
 
 func _add_active(p: Dictionary, id: int, now: int) -> void:
 	var t = task(id)
@@ -366,7 +367,7 @@ func finish(peer: int, p: Dictionary, id: int, ok: bool) -> void:
 		var ev = {"id": id, "kind": "done" if ok else "failed"}
 		ev.merge(award)
 		net.push(peer, "quest_event", ev)
-		log_line.call("Quest: %s %s %d '%s'%s" % [p["name"], "erfüllt" if ok else "scheitert an", id, t.get("name", ""),
+		log_line.call("Задание: персонаж %s %s %d «%s»%s" % [p["name"], "выполнил" if ok else "не выполнил", id, t.get("name", ""),
 			(" (+%d EXP)" % award.get("exp", 0)) if award.get("exp", 0) else ""])
 		if ok and int(t.get("award", {}).get("new", 0)) != 0:
 			var nid = int(t["award"]["new"])
@@ -396,7 +397,7 @@ func finish(peer: int, p: Dictionary, id: int, ok: bool) -> void:
 		if at >= 0 and at + 1 < subs.size():
 			_add_active(p, int(subs[at + 1]), now)
 			_push_state(peer, p)
-			log_line.call("Quest: %s weiter mit %d '%s'" % [p["name"], int(subs[at + 1]), task(int(subs[at + 1])).get("name", "")])
+			log_line.call("Задание: персонаж %s продолжает %d «%s»" % [p["name"], int(subs[at + 1]), task(int(subs[at + 1])).get("name", "")])
 			return
 		finish(peer, p, parent_id, true)
 		return
@@ -502,7 +503,7 @@ func add_exp(p: Dictionary, amount: int) -> void:
 			p["max_mp"] = stats.max_mp(p["class"], p["level"], p["max_mp"])
 		p["hp"] = p["max_hp"]
 		p["mp"] = p["max_mp"]
-		log_line.call("Stufe: %s erreicht Stufe %d" % [p["name"], p["level"]])
+		log_line.call("Уровень: персонаж %s достиг уровня %d" % [p["name"], p["level"]])
 		need = stats.exp_next(p["level"])
 
 func stats_of(p: Dictionary) -> Dictionary:
@@ -513,7 +514,7 @@ func stats_of(p: Dictionary) -> Dictionary:
 func save_stats(p: Dictionary) -> void:
 	if not db.run("UPDATE characters SET level = ?, exp = ?, hp = ?, mp = ?, money = ? WHERE id = ?",
 			[p["level"], p.get("exp", 0), p["hp"], p["mp"], p.get("money", 0), p["id"]]):
-		log_line.call("FEHLER Datenbank: " + db.last_error)
+		log_line.call("ОШИБКА базы данных: " + db.last_error)
 
 
 # ====================================================
@@ -540,7 +541,7 @@ func tick(peer: int, p: Dictionary) -> void:
 func _save_row(p: Dictionary, id: int, state: int, prog: Dictionary, accepted, finished, times: int) -> void:
 	if not db.run("INSERT OR REPLACE INTO quests (character_id, task_id, state, progress, accepted, finished, times) VALUES (?, ?, ?, ?, ?, ?, ?)",
 			[p["id"], id, state, JSON.stringify(prog), accepted, finished, times]):
-		log_line.call("FEHLER Datenbank: " + db.last_error)
+		log_line.call("ОШИБКА базы данных: " + db.last_error)
 
 static func _now() -> int:
 	return int(Time.get_unix_time_from_system())

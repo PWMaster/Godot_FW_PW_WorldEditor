@@ -30,7 +30,13 @@ const TURN_RATE = 12.0
 const CAM_MIN = 2.0
 const CAM_MAX = 20.0
 const CAM_START = 7.0
-const MOUSE_TURN = 0.006
+const MOUSE_TURN = 0.014
+const LOCAL_WALK_SPEED = 12.0
+const LOCAL_SPRINT_SPEED = 26.0
+const LOCAL_ACCELERATION = 48.0
+const FREE_CAMERA_SPEED = 35.0
+const FREE_CAMERA_BOOST = 140.0
+const FREE_CAMERA_ACCELERATION = 120.0
 const PITCH_MIN = -1.35
 const PITCH_MAX = 0.6
 const ARRIVE = 0.3
@@ -47,10 +53,15 @@ signal picked(id: int)
 signal route_finished(arrived: bool)
 signal route_stuck
 signal manual_move
+signal camera_mode_changed(is_free: bool)
 
 var model: Node3D # Figur aus angelica_player.gd
 var anim: AnimationPlayer
 var camera: Camera3D
+var free_camera_enabled = false
+var free_camera_active = false
+var free_camera_root: Node3D
+var free_camera: Camera3D
 var cam_yaw: Node3D
 var cam_pitch: Node3D
 var arm: SpringArm3D
@@ -75,6 +86,8 @@ var _jump = false
 var _airborne = false
 var _turning = false
 var _last_floor = Vector3.ZERO
+var _move_velocity = Vector3.ZERO
+var _free_camera_velocity = Vector3.ZERO
 
 
 func setup(p_model: Node3D, p_height: float) -> void:
@@ -109,7 +122,46 @@ func setup(p_model: Node3D, p_height: float) -> void:
 	camera.fov = 60.0
 	arm.add_child(camera)
 	camera.current = true
+	free_camera_root = Node3D.new()
+	free_camera_root.name = "Свободная камера"
+	get_parent().add_child(free_camera_root)
+	free_camera = Camera3D.new()
+	free_camera.far = 2000.0
+	free_camera.fov = camera.fov
+	free_camera_root.add_child(free_camera)
 	_play("stand")
+
+func _process(delta: float) -> void:
+	if not free_camera_active or free_camera == null or not is_instance_valid(free_camera_root):
+		return
+	var input = Vector3(_axis_signed(KEY_D, KEY_A), _axis_signed(KEY_SPACE, KEY_Q), _axis_signed(KEY_W, KEY_S))
+	var basis = free_camera_root.global_basis
+	var direction = basis.x * input.x + Vector3.UP * input.y - basis.z * input.z
+	var boost = Input.is_physical_key_pressed(KEY_SHIFT)
+	var speed = FREE_CAMERA_BOOST if boost else FREE_CAMERA_SPEED
+	var desired = direction.normalized() * speed if direction.length_squared() > 0.0 else Vector3.ZERO
+	_free_camera_velocity = _free_camera_velocity.move_toward(desired, FREE_CAMERA_ACCELERATION * delta)
+	free_camera_root.global_position += _free_camera_velocity * delta
+
+func _set_free_camera(enabled: bool) -> void:
+	if not free_camera_enabled or enabled == free_camera_active or free_camera == null:
+		return
+	free_camera_active = enabled
+	if enabled:
+		free_camera_root.global_position = camera.global_position
+		free_camera_root.global_rotation.y = cam_yaw.global_rotation.y
+		free_camera.rotation.x = cam_pitch.global_rotation.x
+		camera.current = false
+		free_camera.current = true
+		visible = false
+		set_physics_process(false)
+	else:
+		free_camera.current = false
+		camera.current = true
+		visible = true
+		set_physics_process(true)
+		_free_camera_velocity = Vector3.ZERO
+	camera_mode_changed.emit(free_camera_active)
 
 # -> gespielte Aktion (für die Angriffs-Effekte)
 func play_attack() -> String:
@@ -249,6 +301,8 @@ func direction() -> float:
 	return model.rotation.y if model != null else 0.0
 
 func _physics_process(delta: float) -> void:
+	if free_camera_active:
+		return
 	var wish = Vector2.ZERO
 	if input_enabled:
 		wish.x = _axis(KEY_D, KEY_RIGHT) - _axis(KEY_A, KEY_LEFT)
@@ -273,13 +327,15 @@ func _physics_process(delta: float) -> void:
 			target = null
 		elif to.length() >= 0.05:
 			move = to
-	var walking = input_enabled and Input.is_physical_key_pressed(KEY_SHIFT) and path.is_empty()
-	var speed = Proto.WALK_SPEED if walking else maxf(0.5, Proto.RUN_SPEED + speed_add)
-	if move != Vector3.ZERO:
-		move = move.normalized() * speed
-		model.rotation.y = lerp_angle(model.rotation.y, atan2(move.x, move.z), clampf(TURN_RATE * delta, 0.0, 1.0))
-	velocity.x = move.x
-	velocity.z = move.z
+	var sprinting = input_enabled and (Input.is_physical_key_pressed(KEY_SHIFT) or not path.is_empty() or target != null)
+	var walking = not sprinting
+	var speed = maxf(0.5, (LOCAL_SPRINT_SPEED if sprinting else LOCAL_WALK_SPEED) + speed_add)
+	var desired_move = move.normalized() * speed if move != Vector3.ZERO else Vector3.ZERO
+	_move_velocity = _move_velocity.move_toward(desired_move, LOCAL_ACCELERATION * delta)
+	if _move_velocity.length_squared() > 0.01:
+		model.rotation.y = lerp_angle(model.rotation.y, atan2(_move_velocity.x, _move_velocity.z), clampf(TURN_RATE * delta, 0.0, 1.0))
+	velocity.x = _move_velocity.x
+	velocity.z = _move_velocity.z
 	if is_on_floor():
 		_last_floor = global_position
 		if _jump:
@@ -338,11 +394,30 @@ func _anim_name(key: String) -> String:
 func _axis(a: Key, b: Key) -> float:
 	return 1.0 if Input.is_physical_key_pressed(a) or Input.is_physical_key_pressed(b) else 0.0
 
+func _axis_signed(positive: Key, negative: Key) -> float:
+	return float(Input.is_physical_key_pressed(positive)) - float(Input.is_physical_key_pressed(negative))
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not input_enabled:
 		return
+	var k = event as InputEventKey
+	if k != null and k.pressed and not k.echo:
+		if k.physical_keycode == KEY_F and free_camera_enabled:
+			_set_free_camera(not free_camera_active)
+			get_viewport().set_input_as_handled()
+			return
+		if k.physical_keycode == KEY_ESCAPE:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			_turning = false
+			get_viewport().set_input_as_handled()
+			return
 	var mb = event as InputEventMouseButton
 	if mb != null:
+		if free_camera_active:
+			if mb.button_index == MOUSE_BUTTON_RIGHT:
+				_turning = mb.pressed
+			get_viewport().set_input_as_handled()
+			return
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
 			_turning = mb.pressed
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -353,12 +428,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			_click_move(mb.position)
 		return
 	var mm = event as InputEventMouseMotion
+	if mm != null and free_camera_active and _turning:
+		free_camera_root.rotation.y -= mm.relative.x * MOUSE_TURN
+		free_camera.rotation.x = clampf(free_camera.rotation.x - mm.relative.y * MOUSE_TURN, PITCH_MIN, PITCH_MAX)
+		return
 	if mm != null and _turning:
 		cam_yaw.rotation.y -= mm.relative.x * MOUSE_TURN
 		cam_pitch.rotation.x = clampf(cam_pitch.rotation.x - mm.relative.y * MOUSE_TURN, PITCH_MIN, PITCH_MAX)
 		return
-	var k = event as InputEventKey
-	if k != null and k.pressed and not k.echo and k.physical_keycode == KEY_SPACE:
+	if k != null and k.pressed and not k.echo and k.physical_keycode == KEY_SPACE and not free_camera_active:
 		_jump = true
 
 # Linksklick: Figur unter dem Mauszeiger auswählen, sonst den Boden als Ziel

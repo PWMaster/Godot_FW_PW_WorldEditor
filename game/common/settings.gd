@@ -56,6 +56,22 @@ func save() -> Error:
 	DirAccess.make_dir_recursive_absolute(_path.get_base_dir())
 	return _cfg.save(_path)
 
+func use_imported_pw_client_if_missing() -> void:
+	if section != "client":
+		return
+	var current = str(value("data_root"))
+	var absolute = ProjectSettings.globalize_path(current) if current.begins_with("res://") else current
+	if DirAccess.dir_exists_absolute(absolute):
+		return
+	var manifest_path = "res://addons/PWE-Manager/Server/pw_server_import.json"
+	if not FileAccess.file_exists(manifest_path):
+		return
+	var manifest = JSON.parse_string(FileAccess.get_file_as_string(manifest_path))
+	var client_root = str(manifest.get("client_root", "")) if manifest is Dictionary else ""
+	if client_root != "" and DirAccess.dir_exists_absolute(client_root):
+		set_value("data_root", client_root)
+		save()
+
 static func _convert(v: Variant, def: Variant) -> Variant:
 	match typeof(def):
 		TYPE_BOOL:
@@ -79,3 +95,11 @@ static func user_args() -> Dictionary:
 		else:
 			out[s] = "true"
 	return out
+
+static func server_data_dir() -> String:
+	var profile = str(user_args().get("data-profile", "")).strip_edges()
+	var root = "res://addons/PWE-Manager/Server"
+	return root.path_join(profile) if profile != "" else root
+
+static func server_data_path(file_name: String) -> String:
+	return server_data_dir().path_join(file_name)

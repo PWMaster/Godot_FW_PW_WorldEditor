@@ -35,6 +35,7 @@ extends RefCounted
 
 const Proto = preload("../common/protocol.gd")
 const PLUGIN_SERVER = "res://addons/PWE-Manager/Server/"
+const Settings = preload("../common/settings.gd")
 # Wirkungsart -> Wert in mods (Promille-Werte mit "%")
 const MODS = {"modifyPhyDamage": "dmg", "adjustPhyDamage": "dmg%", "modifyPhyDefense": "def", "adjustPhyDefense": "def%",
 	"modifyAttack": "hit", "adjustAttack": "hit%", "modifyArmor": "eva", "adjustArmor": "eva%", "modifyPhyCrit": "crit",
@@ -66,12 +67,12 @@ func _init(p_world, p_net, p_log: Callable) -> void:
 	log_line = p_log
 
 func load_templates() -> String:
-	var path = PLUGIN_SERVER + "state_templates.json"
+	var path = Settings.server_data_path("state_templates.json")
 	if not FileAccess.file_exists(path):
-		return "%s fehlt" % path
+		return "Не найден файл %s" % path
 	var d = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not d is Dictionary:
-		return "%s ist kein JSON" % path
+		return "Файл %s содержит некорректный JSON" % path
 	for s in d.get("states", []):
 		states[int(s["id"])] = s
 	for k in d.get("kinds", {}):
@@ -264,7 +265,7 @@ func _note(e: Dictionary) -> void:
 	var n = str(e["name"]) if str(e["name"]) != "" else "hs %d" % int(e["hs"])
 	if not _unsupported.has(n):
 		_unsupported[n] = true
-		log_line.call("Statuseffekte: Wirkung %s noch nicht umgesetzt (Effekt liegt, wirkt nicht)" % n)
+		log_line.call("Эффекты состояний: действие %s пока не реализовано (эффект отображается, но не действует)" % n)
 
 
 # ====================================================

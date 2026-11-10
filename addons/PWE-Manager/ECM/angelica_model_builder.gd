@@ -191,16 +191,21 @@ func build_mesh_instance(ski: Dictionary, sk: Skeleton3D, bon: Dictionary) -> Me
 		by_name[bon["bones"][i]["name"]] = i
 	# Skin-Bone-Index -> Skelett-Bone (-1 = Skelett selbst)
 	var skin_bones = PackedInt32Array()
-	for name in ski["bone_names"]:
-		var b = by_name.get(name, -2)
-		if b == -2:
-			for other in by_name:
-				if other.to_lower() == name.to_lower():
-					b = by_name[other]
+	if int(ski.get("version", 9)) < 9:
+		skin_bones.resize(int(ski.get("num_ske_bone", 0)))
+		for i in skin_bones.size():
+			skin_bones[i] = i
+	else:
+		for name in ski["bone_names"]:
+			var b = by_name.get(name, -2)
 			if b == -2:
-				_warn(ski["path"].get_file() + ": Bone \"" + name + "\" fehlt im Skelett")
-				b = -1
-		skin_bones.append(b)
+				for other in by_name:
+					if other.to_lower() == name.to_lower():
+						b = by_name[other]
+				if b == -2:
+					_warn(ski["path"].get_file() + ": Bone \"" + name + "\" fehlt im Skelett")
+					b = -1
+			skin_bones.append(b)
 
 	var mesh = ArrayMesh.new()
 	var materials = {}
@@ -221,6 +226,8 @@ func build_mesh_instance(ski: Dictionary, sk: Skeleton3D, bon: Dictionary) -> Me
 					continue
 				var sb = bones[v * 4 + k]
 				var b = skin_bones[sb] if sb < skin_bones.size() else -1
+				if b < 0 or b >= bon["bones"].size():
+					b = -1
 				out_bones[v * 4 + k] = _bind(skin, binds, sk, bon, b)
 				out_weights[v * 4 + k] = w
 				sum += w

@@ -107,6 +107,9 @@ func open(pck_path: String, decoder) -> String:
 		if nul >= 0:
 			name_bytes = name_bytes.slice(0, nul)
 		var name = decoder.decode_gbk(name_bytes).replace("\\", "/")
+		var package_root = pck_path.get_file().get_basename()
+		if name.to_lower().begins_with(package_root.to_lower() + "/"):
+			name = name.substr(package_root.length() + 1)
 		var info = PackedInt64Array([e.decode_u32(NAME_SIZE), e.decode_u32(NAME_SIZE + 4), e.decode_u32(NAME_SIZE + 8)])
 		if info[2] > MAX_FILE_PACKAGE: # vom Patcher kaputt geschrieben (CheckFileEntryValid): leere Datei
 			info[1] = 0

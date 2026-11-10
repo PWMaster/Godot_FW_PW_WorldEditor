@@ -26,6 +26,7 @@ extends RefCounted
 # ====================================================
 
 const SCHEMA_FILE = "angelica_elements_schema.json"
+const PWElements = preload("angelica_pw_elements.gd")
 const LANGUAGES = ["Deu", "Franz", "Eng"]
 const HEADER_SIZE = 136 # Version + Export-Info
 const TAG_NAME = 0x19e75edf
@@ -43,6 +44,7 @@ var path = ""
 var version = 0
 var lists: Array = [] # [{index, type, space, size, count, offset, layout}]
 var _f: FileAccess
+var _pw_reader
 var _patch = {} # Typ -> Einfügestellen [[Offset, Verschiebung], ...]
 var _ids = {} # Raum -> {ID: [Liste, Satz]}
 var _paths = {} # path.data
@@ -61,6 +63,19 @@ func open(file_path: String, files = null) -> String:
 	_f = FileAccess.open(file_path, FileAccess.READ)
 	if _f == null:
 		return file_path + " nicht lesbar"
+	var file_version = _f.get_32()
+	_f.seek(0)
+	if file_version == PWElements.SUPPORTED_VERSION:
+		_pw_reader = PWElements.new()
+		var pw_error: String = _pw_reader.open(file_path)
+		if pw_error != "":
+			_pw_reader.close()
+			_pw_reader = null
+			_f = null
+			return pw_error
+		version = _pw_reader.version
+		lists = _pw_reader.lists
+		return ""
 	var schema = load_schema()
 	if schema.is_empty():
 		return SCHEMA_FILE + " fehlt"
@@ -108,6 +123,9 @@ func open(file_path: String, files = null) -> String:
 	return ""
 
 func close() -> void:
+	if _pw_reader != null:
+		_pw_reader.close()
+	_pw_reader = null
 	_f = null
 	lists = []
 	_talk_offset = -1
@@ -166,6 +184,8 @@ static func _ints(d: Dictionary) -> Dictionary:
 # ====================================================
 # Liste eines Typs (z.B. "MONSTER_ESSENCE"), -1 wenn nicht vorhanden
 func list_of(type: String) -> int:
+	if _pw_reader != null:
+		return _pw_reader.list_of(type)
 	for l in lists:
 		if l["type"] == type:
 			return l["index"]
@@ -173,6 +193,8 @@ func list_of(type: String) -> int:
 
 # ID -> [Liste, Satz] im Raum (essence / addon / recipe / config), [] wenn unbekannt
 func find(id: int, space: String = "essence") -> Array:
+	if _pw_reader != null:
+		return _pw_reader.find(id, space)
 	if not _ids.has(space):
 		_index(space)
 	return _ids[space].get(id, [])
@@ -194,16 +216,22 @@ func _index(space: String) -> void:
 
 # Typ einer ID ("" wenn unbekannt)
 func type_of(id: int, space: String = "essence") -> String:
+	if _pw_reader != null:
+		return _pw_reader.type_of(id, space)
 	var at = find(id, space)
 	return lists[at[0]]["type"] if not at.is_empty() else ""
 
 # Name einer ID ("" wenn unbekannt)
 func name_of(id: int, space: String = "essence") -> String:
+	if _pw_reader != null:
+		return _pw_reader.name_of(id, space)
 	var at = find(id, space)
 	return record_name(at[0], at[1]) if not at.is_empty() else ""
 
 # Vollständiger Satz einer ID ({} wenn unbekannt), mit "_type" und "_layout"
 func get_record(id: int, space: String = "essence") -> Dictionary:
+	if _pw_reader != null:
+		return _pw_reader.get_record(id, space)
 	var at = find(id, space)
 	return record(at[0], at[1]) if not at.is_empty() else {}
 
@@ -213,6 +241,8 @@ func get_record(id: int, space: String = "essence") -> Dictionary:
 # ====================================================
 # Satz i der Liste li als Dictionary (Felder wie exptypes.h; Texte als String, Arrays als Array)
 func record(li: int, i: int) -> Dictionary:
+	if _pw_reader != null:
+		return _pw_reader.record(li, i)
 	var l: Dictionary = lists[li]
 	if i < 0 or i >= l["count"]:
 		return {}
@@ -234,6 +264,8 @@ func record(li: int, i: int) -> Dictionary:
 
 # Nur der Name (schnell, ohne den ganzen Satz zu zerlegen)
 func record_name(li: int, i: int) -> String:
+	if _pw_reader != null:
+		return _pw_reader.record_name(li, i)
 	var l: Dictionary = lists[li]
 	var nf = _name_field(l["type"])
 	if nf.is_empty():
@@ -254,6 +286,8 @@ func _name_field(type: String) -> Array:
 	return []
 
 func _fields(type: String) -> Array:
+	if _pw_reader != null:
+		return _pw_reader._fields(type)
 	return _schema.get("structs", {}).get(type, {}).get("fields", [])
 
 func _decode(type: String, b: PackedByteArray, base: int, steps: Array) -> Dictionary:
